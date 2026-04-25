@@ -139,6 +139,13 @@ dependencies {
     implementation("androidx.media3:media3-session:1.4.1")
     implementation("androidx.media3:media3-common:1.4.1")
 
+    // Torrent / P2P streaming (libtorrent4j + tiny embedded HTTP server feeding ExoPlayer)
+    implementation("org.libtorrent4j:libtorrent4j:2.1.0-32")
+    implementation("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-32")
+    implementation("org.libtorrent4j:libtorrent4j-android-arm:2.1.0-32")
+    implementation("org.libtorrent4j:libtorrent4j-android-x86_64:2.1.0-32")
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+
     // NewPipe Extractor (YouTube music/videos without API keys)
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.2")
     implementation("org.jsoup:jsoup:1.17.2")

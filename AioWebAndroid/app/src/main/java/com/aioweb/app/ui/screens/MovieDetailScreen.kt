@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MovieDetailScreen(movieId: Long, onBack: () -> Unit) {
+fun MovieDetailScreen(movieId: Long, onBack: () -> Unit, onPlayUrl: (url: String, title: String) -> Unit) {
     val context = LocalContext.current
     val sl = remember { ServiceLocator.get(context) }
     val scope = rememberCoroutineScope()
@@ -112,6 +112,45 @@ fun MovieDetailScreen(movieId: Long, onBack: () -> Unit) {
                 PlayCta("Stream on Vidsrc.to", filled = false) {
                     context.startActivity(
                         Intent(Intent.ACTION_VIEW, Uri.parse("https://vidsrc.to/embed/movie/$movieId"))
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                var showPlayUrl by remember { mutableStateOf(false) }
+                var customUrl by remember { mutableStateOf("") }
+                PlayCta("Play in App (URL / Magnet)", filled = false) { showPlayUrl = true }
+                if (showPlayUrl) {
+                    AlertDialog(
+                        onDismissRequest = { showPlayUrl = false },
+                        title = { Text("Play any stream") },
+                        text = {
+                            Column {
+                                Text(
+                                    "Paste an HTTP(S), HLS (.m3u8), DASH (.mpd), MP4 link, or a magnet:/torrent URL. The native player handles all of them.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                OutlinedTextField(
+                                    value = customUrl,
+                                    onValueChange = { customUrl = it },
+                                    placeholder = { Text("magnet:?xt=urn:btih:… or https://…/movie.mp4") },
+                                    singleLine = false,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                val u = customUrl.trim()
+                                showPlayUrl = false
+                                if (u.isNotEmpty()) {
+                                    onPlayUrl(u, movie?.displayTitle ?: "Playback")
+                                }
+                            }) { Text("Play") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showPlayUrl = false }) { Text("Cancel") }
+                        }
                     )
                 }
 

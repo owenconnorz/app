@@ -101,6 +101,10 @@ fun PluginsScreen(onBack: () -> Unit) {
                     onFetch = { vm.fetchRepo(repo) },
                     onRemove = { vm.removeRepo(repo.id) },
                     onInstall = { vm.install(repo, it) },
+                    onUninstall = { plugin ->
+                        val key = plugin.internalName ?: plugin.name
+                        state.installed.firstOrNull { it.internalName == key }?.let(vm::uninstall)
+                    },
                 )
             }
         }
@@ -298,12 +302,6 @@ private fun PluginRow(
                 Icon(Icons.Default.Delete, "Uninstall", tint = MaterialTheme.colorScheme.error)
             }
             else -> IconButton(onClick = onInstall) {
-                Icon(Icons.Default.CloudDownload, "Install", tint = MaterialTheme.colorScheme.primary)
-            }
-        }
-    }
-}
-onClick = onInstall) {
                 Icon(Icons.Default.CloudDownload, "Install", tint = MaterialTheme.colorScheme.primary)
             }
         }

@@ -30,7 +30,7 @@ import com.aioweb.app.ui.viewmodel.AdultViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AdultScreen(onPlay: (embedUrl: String, title: String) -> Unit) {
+fun AdultScreen(onPlay: (videoId: String, fallbackEmbed: String, title: String) -> Unit) {
     val context = LocalContext.current
     val vm: AdultViewModel = viewModel(factory = AdultViewModel.factory(context))
     val state by vm.state.collectAsState()
@@ -86,7 +86,7 @@ fun AdultScreen(onPlay: (embedUrl: String, title: String) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(state.videos, key = { it.id }) { v ->
-                AdultCard(v) { onPlay(v.embed, v.title) }
+                AdultCard(v) { onPlay(v.id, v.embed, v.title) }
             }
         }
     }

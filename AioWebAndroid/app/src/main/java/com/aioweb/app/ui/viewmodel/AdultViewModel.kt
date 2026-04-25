@@ -19,6 +19,7 @@ data class AdultState(
     val videos: List<EpornerVideo> = emptyList(),
     val loading: Boolean = false,
     val error: String? = null,
+    val resolvingId: String? = null,
 )
 
 class AdultViewModel : ViewModel() {
@@ -44,6 +45,24 @@ class AdultViewModel : ViewModel() {
             } catch (e: Exception) {
                 _state.update { it.copy(loading = false, error = "Failed: ${e.message}") }
             }
+        }
+    }
+
+    /**
+     * Resolves a direct MP4 URL for the given video.
+     * Returns `null` if no direct stream is exposed by Eporner for that video
+     * (rare — but happens for some studio-exclusive content).
+     */
+    suspend fun resolveStreamUrl(videoId: String, fallbackEmbed: String): String? {
+        _state.update { it.copy(resolvingId = videoId, error = null) }
+        return try {
+            val resp = api.details(id = videoId)
+            resp.videos.firstOrNull()?.bestMp4()
+        } catch (e: Exception) {
+            _state.update { it.copy(error = "Stream resolve failed: ${e.message}") }
+            null
+        } finally {
+            _state.update { it.copy(resolvingId = null) }
         }
     }
 

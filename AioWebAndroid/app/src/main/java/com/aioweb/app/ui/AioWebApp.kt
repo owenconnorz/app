@@ -34,7 +34,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.aioweb.app.data.ServiceLocator
-import com.aioweb.app.ui.screens.AdultPlayerScreen
+import com.aioweb.app.player.NativePlayerScreen
 import com.aioweb.app.ui.screens.AdultScreen
 import com.aioweb.app.ui.screens.AiScreen
 import com.aioweb.app.ui.screens.LibraryScreen
@@ -43,6 +43,11 @@ import com.aioweb.app.ui.screens.MoviesScreen
 import com.aioweb.app.ui.screens.MusicScreen
 import com.aioweb.app.ui.screens.PluginsScreen
 import com.aioweb.app.ui.screens.SettingsScreen
+import com.aioweb.app.ui.viewmodel.AdultViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -124,29 +129,82 @@ fun AioWebApp() {
                 ) {
                     MovieDetailScreen(
                         movieId = it.arguments!!.getLong("id"),
-                        onBack = { nav.popBackStack() }
+                        onBack = { nav.popBackStack() },
+                        onPlayUrl = { url, title ->
+                            val u = URLEncoder.encode(url, "UTF-8")
+                            val t = URLEncoder.encode(title, "UTF-8")
+                            nav.navigate("player/url/$u/$t")
+                        },
                     )
                 }
                 composable(Tab.Music.route)    { MusicScreen() }
                 composable(Tab.Ai.route)       { AiScreen() }
                 composable(Tab.Library.route)  { LibraryScreen() }
                 composable(Tab.Adult.route) {
-                    AdultScreen(onPlay = { embed, title ->
+                    AdultScreen(onPlay = { videoId, embed, title ->
+                        val v = URLEncoder.encode(videoId, "UTF-8")
                         val e = URLEncoder.encode(embed, "UTF-8")
                         val t = URLEncoder.encode(title, "UTF-8")
-                        nav.navigate("adult-player/$e/$t")
+                        nav.navigate("player/eporner/$v/$e/$t")
                     })
                 }
+                // Eporner-specific player: resolves direct MP4 by video id, then plays natively.
                 composable(
-                    "adult-player/{embed}/{title}",
+                    "player/eporner/{id}/{embed}/{title}",
                     arguments = listOf(
+                        navArgument("id")    { type = NavType.StringType },
                         navArgument("embed") { type = NavType.StringType },
                         navArgument("title") { type = NavType.StringType },
                     )
-                ) {
-                    val embed = URLDecoder.decode(it.arguments!!.getString("embed")!!, "UTF-8")
-                    val title = URLDecoder.decode(it.arguments!!.getString("title")!!, "UTF-8")
-                    AdultPlayerScreen(embed, title) { nav.popBackStack() }
+                ) { entry ->
+                    val id    = URLDecoder.decode(entry.arguments!!.getString("id")!!,    "UTF-8")
+                    val embed = URLDecoder.decode(entry.arguments!!.getString("embed")!!, "UTF-8")
+                    val title = URLDecoder.decode(entry.arguments!!.getString("title")!!, "UTF-8")
+                    val ctx = LocalContext.current
+                    val vm: AdultViewModel = viewModel(factory = AdultViewModel.factory(ctx))
+                    var resolved by remember { mutableStateOf<String?>(null) }
+                    var resolveFailed by remember { mutableStateOf(false) }
+                    LaunchedEffect(id) {
+                        val url = vm.resolveStreamUrl(id, embed)
+                        if (url == null) resolveFailed = true else resolved = url
+                    }
+                    when {
+                        resolved != null -> NativePlayerScreen(
+                            streamUrl = resolved!!,
+                            title = title,
+                            onBack = { nav.popBackStack() },
+                        )
+                        resolveFailed -> Box(
+                            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+                            contentAlignment = androidx.compose.ui.Alignment.Center,
+                        ) {
+                            Text(
+                                "No direct stream available for this video.",
+                                color = MaterialTheme.colorScheme.onBackground,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                        else -> Box(
+                            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+                            contentAlignment = androidx.compose.ui.Alignment.Center,
+                        ) { androidx.compose.material3.CircularProgressIndicator() }
+                    }
+                }
+                // Generic player route used by Movies (CloudStream/torrent/HTTP) and any other source.
+                composable(
+                    "player/url/{url}/{title}",
+                    arguments = listOf(
+                        navArgument("url")   { type = NavType.StringType },
+                        navArgument("title") { type = NavType.StringType },
+                    )
+                ) { entry ->
+                    val url   = URLDecoder.decode(entry.arguments!!.getString("url")!!,   "UTF-8")
+                    val title = URLDecoder.decode(entry.arguments!!.getString("title")!!, "UTF-8")
+                    NativePlayerScreen(
+                        streamUrl = url,
+                        title = title,
+                        onBack = { nav.popBackStack() },
+                    )
                 }
                 composable(Tab.Settings.route) {
                     SettingsScreen(onOpenPlugins = { nav.navigate("plugins") })
