@@ -47,8 +47,11 @@ class TorrentStreamServer(context: Context) {
         // 1. Resolve metadata (magnet → TorrentInfo bytes; .torrent URL → fetched bytes).
         val infoBytes: ByteArray = when {
             magnetOrUrl.startsWith("magnet:", ignoreCase = true) ->
-                sessionManager.fetchMagnet(magnetOrUrl, (metadataTimeoutMs / 1000).toInt().coerceAtLeast(15))
-                    ?: return null
+                sessionManager.fetchMagnet(
+                    magnetOrUrl,
+                    (metadataTimeoutMs / 1000).toInt().coerceAtLeast(15),
+                    downloadDir,
+                ) ?: return null
             magnetOrUrl.startsWith("http", ignoreCase = true) ->
                 runCatching { URL(magnetOrUrl).openStream().use { it.readBytes() } }.getOrNull()
                     ?: return null
@@ -82,8 +85,11 @@ class TorrentStreamServer(context: Context) {
         val prios = Array(files.numFiles()) { Priority.IGNORE }
         prios[largestIdx] = Priority.TOP_PRIORITY
         handle.prioritizeFiles(prios)
-        // libtorrent4j flag for sequential download:
-        runCatching { handle.setFlags(handle.flags().or_(org.libtorrent4j.TorrentFlags.SEQUENTIAL_DOWNLOAD)) }
+        // libtorrent4j flag for sequential download (use property syntax — Kotlin
+        // exposes `flags()`/`setFlags(...)` as a synthetic property `flags`):
+        runCatching {
+            handle.flags = handle.flags.or_(org.libtorrent4j.TorrentFlags.SEQUENTIAL_DOWNLOAD)
+        }
 
         // 5. Start NanoHTTPD on a free port.
         val server = HttpServer(absFile) { totalBytes }
