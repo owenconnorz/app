@@ -52,12 +52,16 @@ fun MusicScreen() {
     var query by remember { mutableStateOf("") }
 
     val player = remember {
-        ExoPlayer.Builder(context).build().apply { playWhenReady = true }
+        buildMusicExoPlayer(context)
     }
     var isPlaying by remember { mutableStateOf(false) }
+    var playerError by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
         val l = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                playerError = "Audio playback failed (${error.errorCodeName}): ${error.message}"
+            }
         }
         player.addListener(l)
         onDispose { player.removeListener(l); player.release() }
@@ -81,6 +85,39 @@ fun MusicScreen() {
                     if (query.length >= 2) {
                         kotlinx.coroutines.delay(400)
                         vm.search(query)
+                    }
+                }
+            }
+            // Surface BOTH the ViewModel's error (e.g. NewPipe extraction failed) and the
+            // ExoPlayer's playback error in a prominent banner — this is critical for
+            // debugging "music won't play" without the user having to scroll.
+            val combinedError = state.error ?: playerError
+            if (combinedError != null) {
+                item {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.errorContainer)
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Default.Search,
+                            null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            combinedError,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { playerError = null; vm.search(query) }) {
+                            Text("Dismiss")
+                        }
                     }
                 }
             }
@@ -231,6 +268,26 @@ fun MusicScreen() {
             )
         }
     }
+}
+
+/**
+ * Build an ExoPlayer with a Chrome-like User-Agent and Range-request support.
+ * googlevideo.com sometimes serves 403 to ExoPlayer's default UA, so we mirror
+ * what the YouTube web client sends.
+ */
+@OptIn(androidx.media3.common.util.UnstableApi::class)
+private fun buildMusicExoPlayer(context: android.content.Context): ExoPlayer {
+    val httpFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+        .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .setAllowCrossProtocolRedirects(true)
+        .setConnectTimeoutMs(15_000)
+        .setReadTimeoutMs(30_000)
+    val mediaSourceFactory =
+        androidx.media3.exoplayer.source.DefaultMediaSourceFactory(httpFactory)
+    return ExoPlayer.Builder(context)
+        .setMediaSourceFactory(mediaSourceFactory)
+        .build()
+        .apply { playWhenReady = true }
 }
 
 private fun playTrack(player: ExoPlayer, track: YtTrack, audioUrl: String) {
