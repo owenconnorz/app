@@ -31,6 +31,14 @@ android {
         )
         // TMDB v3 API key (free public dev key – users can override in Settings)
         buildConfigField("String", "TMDB_API_KEY", "\"8265bd1679663a7ea12ac168da84d2e8\"")
+
+        // GitHub repo for the in-app updater. CI auto-injects from `GITHUB_REPOSITORY`
+        // (`owner/name`); local builds default to the original AioWeb repo.
+        val ghRepository = System.getenv("GITHUB_REPOSITORY") ?: "owenconnorz/AioWeb"
+        val ghOwner = ghRepository.substringBefore('/')
+        val ghName  = ghRepository.substringAfter('/')
+        buildConfigField("String", "GITHUB_OWNER", "\"$ghOwner\"")
+        buildConfigField("String", "GITHUB_REPO",  "\"$ghName\"")
     }
 
     signingConfigs {

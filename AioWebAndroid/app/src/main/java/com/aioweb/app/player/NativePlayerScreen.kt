@@ -4,18 +4,38 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -25,22 +45,29 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Unified native media player powered by Media3 ExoPlayer.
- * Handles HTTP(S) progressive (MP4/MKV/WEBM), HLS (.m3u8), DASH (.mpd) and
- * magnet/torrent (via [TorrentStreamServer] proxied through a local HTTP port).
+ * Nuvio-style native media player.
  *
- * @param streamUrl direct video URL or `magnet:` link
- * @param title    title shown in the top bar
- * @param headers  optional HTTP headers (e.g., Referer for plugin sources)
+ * Behaviour:
+ *  - Edge-to-edge black canvas, no system bars
+ *  - Tap once: toggles overlay (auto-hides after 3s of inactivity)
+ *  - Double-tap left half: rewind 10s | double-tap right half: forward 10s
+ *  - Top bar: back button + title
+ *  - Bottom bar: progress slider + current/total time
+ *  - Center: large play/pause button
+ *
+ * Supports HLS (.m3u8), DASH (.mpd), progressive (MP4/MKV/WEBM) and `magnet:`/`.torrent`
+ * (proxied through libtorrent4j + NanoHTTPD via [TorrentStreamServer]).
  */
 @OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
-@SuppressLint("SourceLockedOrientationActivity")
+@SuppressLint("UnsafeOptInUsageError")
 @Composable
 fun NativePlayerScreen(
     streamUrl: String,
@@ -52,14 +79,13 @@ fun NativePlayerScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // --- Stream resolution (handle magnets through TorrentStreamServer) -------------------------
     var resolvedUrl by remember { mutableStateOf<String?>(null) }
     var resolveError by remember { mutableStateOf<String?>(null) }
     val torrentServer = remember { mutableStateOf<TorrentStreamServer?>(null) }
 
-    // Resolve magnet → local proxy URL, otherwise use the URL directly.
     LaunchedEffect(streamUrl) {
-        val isTorrent = streamUrl.startsWith("magnet:", true) ||
-                streamUrl.endsWith(".torrent", true)
+        val isTorrent = streamUrl.startsWith("magnet:", true) || streamUrl.endsWith(".torrent", true)
         if (isTorrent) {
             val server = TorrentStreamServer(context.applicationContext)
             torrentServer.value = server
@@ -67,41 +93,32 @@ fun NativePlayerScreen(
                 val proxied = withContext(Dispatchers.IO) {
                     runCatching { server.start(streamUrl) }.getOrNull()
                 }
-                if (proxied == null) {
-                    resolveError = "Could not fetch torrent metadata. Try another source."
-                } else {
-                    resolvedUrl = proxied
-                }
+                if (proxied == null) resolveError = "Could not fetch torrent metadata."
+                else resolvedUrl = proxied
             }
         } else {
             resolvedUrl = streamUrl
         }
     }
 
-    // Build the ExoPlayer instance once we have a URL.
+    // --- ExoPlayer ------------------------------------------------------------------------------
     val player = remember { mutableStateOf<ExoPlayer?>(null) }
     LaunchedEffect(resolvedUrl) {
         val url = resolvedUrl ?: return@LaunchedEffect
         val httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
-            .setUserAgent("AioWebAndroid/1.0 (ExoPlayer)")
-            .also { f ->
-                if (headers.isNotEmpty()) f.setDefaultRequestProperties(headers)
-            }
-        val dataSourceFactory: DataSource.Factory = httpFactory
+            .setUserAgent("StreamCloud/1.0 (ExoPlayer)")
+            .also { f -> if (headers.isNotEmpty()) f.setDefaultRequestProperties(headers) }
+        val dsFactory: DataSource.Factory = httpFactory
 
         val mediaItem = MediaItem.fromUri(url)
         val source: MediaSource = when {
-            url.contains(".m3u8", true) ->
-                HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
-            url.contains(".mpd", true) ->
-                DashMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
-            else ->
-                ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+            url.contains(".m3u8", true) -> HlsMediaSource.Factory(dsFactory).createMediaSource(mediaItem)
+            url.contains(".mpd", true)  -> DashMediaSource.Factory(dsFactory).createMediaSource(mediaItem)
+            else -> ProgressiveMediaSource.Factory(dsFactory).createMediaSource(mediaItem)
         }
-
         val ex = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dsFactory))
             .build()
             .apply {
                 setMediaSource(source)
@@ -111,13 +128,12 @@ fun NativePlayerScreen(
         player.value = ex
     }
 
-    // Keep screen on while playing.
+    // --- Window flags + cleanup ----------------------------------------------------------------
     val window = (context as? Activity)?.window
     DisposableEffect(Unit) {
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
-
     DisposableEffect(Unit) {
         onDispose {
             player.value?.release()
@@ -127,70 +143,241 @@ fun NativePlayerScreen(
         }
     }
 
-    Scaffold(
-        containerColor = Color.Black,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        title,
-                        maxLines = 1,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+    // --- Player state for the overlay ----------------------------------------------------------
+    val ex = player.value
+    var isPlaying by remember { mutableStateOf(true) }
+    var positionMs by remember { mutableStateOf(0L) }
+    var durationMs by remember { mutableStateOf(0L) }
+    var bufferingMs by remember { mutableStateOf(0L) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    var lastInteractionTs by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(ex) {
+        ex ?: return@LaunchedEffect
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(p: Boolean) { isPlaying = p }
+            override fun onPlaybackStateChanged(state: Int) {
+                durationMs = ex.duration.coerceAtLeast(0L)
+            }
+        }
+        ex.addListener(listener)
+        while (true) {
+            positionMs = ex.currentPosition.coerceAtLeast(0L)
+            durationMs = ex.duration.coerceAtLeast(0L)
+            bufferingMs = ex.bufferedPosition.coerceAtLeast(0L)
+            isPlaying = ex.isPlaying
+            delay(500)
+        }
+    }
+
+    // Auto-hide controls after 3s.
+    LaunchedEffect(controlsVisible, lastInteractionTs) {
+        if (controlsVisible) {
+            delay(3000)
+            if (System.currentTimeMillis() - lastInteractionTs >= 2900) controlsVisible = false
+        }
+    }
+
+    fun bumpInteraction() {
+        controlsVisible = true
+        lastInteractionTs = System.currentTimeMillis()
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        // --- Video surface ---------------------------------------------------------------------
+        if (ex != null) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        useController = false
+                        setShutterBackgroundColor(android.graphics.Color.BLACK)
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        setBackgroundColor(android.graphics.Color.BLACK)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Black.copy(alpha = 0.55f),
-                    titleContentColor = Color.White,
-                ),
+                update = { it.player = ex },
             )
-        },
-    ) { padding ->
-        Box(
-            Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .background(Color.Black)
+        }
+
+        // --- Gesture layer ---------------------------------------------------------------------
+        val density = LocalDensity.current
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val widthPx = with(density) { maxWidth.toPx() }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(ex) {
+                        detectTapGestures(
+                            onTap = { bumpInteraction() },
+                            onDoubleTap = { offset: Offset ->
+                                ex ?: return@detectTapGestures
+                                val side = if (offset.x < widthPx / 2f) -10_000L else +10_000L
+                                ex.seekTo((ex.currentPosition + side).coerceAtLeast(0L))
+                                bumpInteraction()
+                            },
+                        )
+                    }
+            )
+        }
+
+        // --- Overlay (top bar + center play + bottom bar) --------------------------------------
+        AnimatedVisibility(
+            visible = controlsVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
         ) {
-            val ex = player.value
-            if (ex != null) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            useController = true
-                            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                            setBackgroundColor(android.graphics.Color.BLACK)
-                        }
-                    },
-                    update = { it.player = ex },
-                )
-            } else {
-                Column(
-                    Modifier.fillMaxSize(),
-                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+            Column(Modifier.fillMaxSize()) {
+                // Top scrim + back + title
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent))
+                        )
+                        .padding(top = 12.dp, start = 8.dp, end = 16.dp, bottom = 24.dp)
                 ) {
-                    if (resolveError != null) {
-                        Text(resolveError!!, color = Color.White)
-                    } else {
-                        CircularProgressIndicator(color = Color.White)
-                        Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+                        }
+                        Spacer(Modifier.width(4.dp))
                         Text(
-                            if (streamUrl.startsWith("magnet:", true))
-                                "Fetching torrent metadata…"
-                            else "Loading…",
+                            title,
                             color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                // Center play/pause + skip buttons
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    NuvioCircleIcon(Icons.Default.Replay10, "Rewind 10s") {
+                        ex?.seekTo((ex.currentPosition - 10_000L).coerceAtLeast(0L))
+                        bumpInteraction()
+                    }
+                    Spacer(Modifier.width(36.dp))
+                    NuvioCircleIcon(
+                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        if (isPlaying) "Pause" else "Play",
+                        big = true,
+                    ) {
+                        ex ?: return@NuvioCircleIcon
+                        if (ex.isPlaying) ex.pause() else ex.play()
+                        bumpInteraction()
+                    }
+                    Spacer(Modifier.width(36.dp))
+                    NuvioCircleIcon(Icons.Default.Forward10, "Forward 10s") {
+                        ex?.seekTo((ex.currentPosition + 10_000L).coerceAtMost(durationMs))
+                        bumpInteraction()
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                // Bottom scrim + progress + times
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))
+                        )
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                ) {
+                    Slider(
+                        value = if (durationMs > 0) positionMs / durationMs.toFloat() else 0f,
+                        onValueChange = { v ->
+                            ex?.seekTo((v * durationMs).toLong())
+                            bumpInteraction()
+                        },
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.25f),
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            formatTime(positionMs),
+                            color = Color.White, style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            formatTime(durationMs),
+                            color = Color.White.copy(alpha = 0.7f),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                 }
             }
         }
+
+        // --- Loading / error states ------------------------------------------------------------
+        if (ex == null) {
+            Column(
+                Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                if (resolveError != null) {
+                    Text(
+                        resolveError!!,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(24.dp),
+                    )
+                } else {
+                    CircularProgressIndicator(color = Color.White)
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        if (streamUrl.startsWith("magnet:", true))
+                            "Connecting to peers…" else "Loading…",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
     }
+}
+
+@Composable
+private fun NuvioCircleIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    big: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val size = if (big) 76.dp else 56.dp
+    val iconSize = if (big) 44.dp else 28.dp
+    Box(
+        Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.45f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(iconSize))
+    }
+}
+
+private fun formatTime(ms: Long): String {
+    if (ms <= 0) return "0:00"
+    val totalSec = ms / 1000
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) String.format("%d:%02d:%02d", h, m, s)
+    else String.format("%d:%02d", m, s)
 }

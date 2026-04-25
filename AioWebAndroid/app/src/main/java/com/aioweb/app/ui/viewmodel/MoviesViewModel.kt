@@ -76,7 +76,7 @@ class MoviesViewModel(
         if (sourceId != SOURCE_BUILTIN) {
             val name = _state.value.installedPlugins.firstOrNull { it.internalName == sourceId }?.name ?: sourceId
             _state.update {
-                it.copy(notice = "Source: $name. Plugin streaming runtime ships in a future update — for now content is from the built-in catalogue, filtered by this plugin's media types.")
+                it.copy(notice = "Source: $name. The plugin's home feed and search results will appear here once the CloudStream runtime ships in a future StreamCloud update — for now we keep showing the built-in catalogue.")
             }
         } else {
             _state.update { it.copy(notice = null) }

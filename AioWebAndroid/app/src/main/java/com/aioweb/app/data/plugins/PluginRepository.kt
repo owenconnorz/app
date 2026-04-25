@@ -110,16 +110,18 @@ class PluginRepository(private val context: Context) {
                 add("$base/repo.json")
             }
         }
-        var lastError: Exception? = null
+        val errors = mutableListOf<String>()
         for (url in candidates) {
             try {
                 val plugins = fetchOne(url)
                 if (plugins.isNotEmpty()) return@withContext plugins
+                errors += "$url → 200 OK but 0 plugins parsed"
             } catch (e: Exception) {
-                lastError = e
+                errors += "$url → ${e.message ?: e::class.simpleName}"
             }
         }
-        throw lastError ?: error("No plugins found at $repoUrl")
+        // Surface every URL we tried so users can spot typos / wrong branches fast.
+        error("No plugins found. Tried:\n" + errors.joinToString("\n"))
     }
 
     private fun fetchOne(url: String): List<CloudStreamPlugin> {
@@ -129,7 +131,7 @@ class PluginRepository(private val context: Context) {
             .header("Accept", "application/json,text/plain,*/*")
             .build()
         http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) error("HTTP ${resp.code} at $url")
+            if (!resp.isSuccessful) error("HTTP ${resp.code} ${resp.message}")
             val body = resp.body?.string().orEmpty()
             // Try array form first
             val array = runCatching {

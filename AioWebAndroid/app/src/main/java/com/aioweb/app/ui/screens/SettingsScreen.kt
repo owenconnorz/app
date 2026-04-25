@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
@@ -38,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import com.aioweb.app.BuildConfig
 import com.aioweb.app.data.ServiceLocator
 import com.aioweb.app.data.plugins.PluginRepository
+import com.aioweb.app.data.updater.UpdateChecker
+import com.aioweb.app.data.updater.UpdateInfo
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -215,19 +218,21 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
         }
 
         Section("About") {
+            UpdaterRow()
             NavRow(
                 icon = Icons.Default.Info,
-                title = "AioWeb",
+                title = "StreamCloud",
                 subtitle = "Version ${BuildConfig.VERSION_NAME} · code ${BuildConfig.VERSION_CODE}",
                 onClick = {},
             )
             NavRow(
                 icon = Icons.Default.AutoAwesome,
                 title = "Source code",
-                subtitle = "github.com/owenconnorz/AioWeb",
+                subtitle = "github.com/${BuildConfig.GITHUB_OWNER}/${BuildConfig.GITHUB_REPO}",
                 onClick = {
                     context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/owenconnorz/AioWeb"))
+                        Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/${BuildConfig.GITHUB_OWNER}/${BuildConfig.GITHUB_REPO}"))
                     )
                 },
             )
@@ -237,7 +242,8 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
                 subtitle = "Open an issue on GitHub",
                 onClick = {
                     context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/owenconnorz/AioWeb/issues/new"))
+                        Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/${BuildConfig.GITHUB_OWNER}/${BuildConfig.GITHUB_REPO}/issues/new"))
                     )
                 },
             )
@@ -415,3 +421,84 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1024 -> String.format("%.0f KB", bytes / 1024.0)
     else -> "$bytes B"
 }
+
+@Composable
+private fun UpdaterRow() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val checker = remember { UpdateChecker(context.applicationContext) }
+
+    var checking by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var update by remember { mutableStateOf<UpdateInfo?>(null) }
+    var downloading by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf(0f) }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(enabled = !checking && !downloading) {
+                checking = true; status = null; update = null
+                scope.launch {
+                    try {
+                        val info = checker.fetchLatest(includeOlder = false)
+                        update = info
+                        status = if (info == null) "You're on the latest build."
+                                 else "${info.title} available · ${formatBytes(info.sizeBytes)}"
+                    } catch (e: Exception) {
+                        status = "Check failed: ${e.message}"
+                    } finally {
+                        checking = false
+                    }
+                }
+            }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Icon(Icons.Default.SystemUpdate, null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Check for updates", style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                status ?: "Pulls from github.com/${BuildConfig.GITHUB_OWNER}/${BuildConfig.GITHUB_REPO}/releases",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (downloading) {
+                Spacer(Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        when {
+            checking || downloading -> CircularProgressIndicator(
+                Modifier.size(20.dp), strokeWidth = 2.dp,
+            )
+            update?.isNewerThanInstalled == true -> Button(
+                onClick = {
+                    val info = update ?: return@Button
+                    downloading = true; progress = 0f
+                    scope.launch {
+                        try {
+                            val apk = checker.downloadApk(info) { progress = it }
+                            checker.launchInstaller(apk)
+                            status = "Launching installer…"
+                        } catch (e: Exception) {
+                            status = "Download failed: ${e.message}"
+                        } finally {
+                            downloading = false
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(10.dp),
+            ) { Text("Install") }
+        }
+    }
+}
+
