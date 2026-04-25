@@ -217,6 +217,7 @@ private fun RepoCard(
     onFetch: () -> Unit,
     onRemove: () -> Unit,
     onInstall: (CloudStreamPlugin) -> Unit,
+    onUninstall: (CloudStreamPlugin) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(
@@ -254,11 +255,13 @@ private fun RepoCard(
             if (expanded) {
                 Spacer(Modifier.height(6.dp))
                 plugins.forEach { plugin ->
+                    val internalKey = plugin.internalName ?: plugin.name
                     PluginRow(
                         plugin = plugin,
                         installing = plugin.name in installingNames,
-                        installed = (plugin.internalName ?: plugin.name) in installedNames,
+                        installed = internalKey in installedNames,
                         onInstall = { onInstall(plugin) },
+                        onUninstall = { onUninstall(plugin) },
                     )
                 }
             }
@@ -272,6 +275,7 @@ private fun PluginRow(
     installing: Boolean,
     installed: Boolean,
     onInstall: () -> Unit,
+    onUninstall: () -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -289,9 +293,17 @@ private fun PluginRow(
                 style = MaterialTheme.typography.bodyMedium)
         }
         when {
-            installed -> Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
             installing -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            installed -> IconButton(onClick = onUninstall) {
+                Icon(Icons.Default.Delete, "Uninstall", tint = MaterialTheme.colorScheme.error)
+            }
             else -> IconButton(onClick = onInstall) {
+                Icon(Icons.Default.CloudDownload, "Install", tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+onClick = onInstall) {
                 Icon(Icons.Default.CloudDownload, "Install", tint = MaterialTheme.colorScheme.primary)
             }
         }
