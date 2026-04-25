@@ -8,8 +8,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,7 +28,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onOpenPlugins: () -> Unit) {
     val context = LocalContext.current
     val sl = remember { ServiceLocator.get(context) }
     val scope = rememberCoroutineScope()
@@ -33,12 +36,14 @@ fun SettingsScreen() {
     var url by remember { mutableStateOf("") }
     var provider by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
+    var nsfw by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         url = sl.settings.backendUrl.first()
         provider = sl.settings.aiProvider.first()
         model = sl.settings.aiModel.first()
+        nsfw = sl.settings.nsfwEnabled.first()
     }
 
     Column(
@@ -52,6 +57,28 @@ fun SettingsScreen() {
             modifier = Modifier.padding(horizontal = 20.dp)
         )
         Spacer(Modifier.height(20.dp))
+
+        Section("Sources") {
+            NavRow(
+                icon = Icons.Default.Extension,
+                title = "CloudStream Plugins",
+                subtitle = "Add repos · install / remove plugins",
+                onClick = onOpenPlugins,
+            )
+        }
+
+        Section("Content filters") {
+            ToggleRow(
+                icon = Icons.Default.Visibility,
+                title = "Show Adult tab (18+)",
+                subtitle = "Enables Eporner-powered Adult section",
+                checked = nsfw,
+                onChange = {
+                    nsfw = it
+                    scope.launch { sl.settings.setNsfwEnabled(it) }
+                },
+            )
+        }
 
         Section("Backend") {
             OutlinedTextField(
@@ -123,6 +150,61 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
         )
         Spacer(Modifier.height(8.dp))
         content()
+    }
+}
+
+@Composable
+private fun NavRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ToggleRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable { onChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 

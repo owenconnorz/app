@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Theaters
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -18,9 +19,12 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -29,21 +33,27 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.aioweb.app.data.ServiceLocator
+import com.aioweb.app.ui.screens.AdultPlayerScreen
+import com.aioweb.app.ui.screens.AdultScreen
 import com.aioweb.app.ui.screens.AiScreen
 import com.aioweb.app.ui.screens.LibraryScreen
 import com.aioweb.app.ui.screens.MovieDetailScreen
 import com.aioweb.app.ui.screens.MoviesScreen
 import com.aioweb.app.ui.screens.MusicScreen
+import com.aioweb.app.ui.screens.PluginsScreen
 import com.aioweb.app.ui.screens.SettingsScreen
+import java.net.URLDecoder
+import java.net.URLEncoder
 
 private sealed class Tab(val route: String, val label: String, val icon: ImageVector) {
     data object Movies   : Tab("movies",   "Movies",   Icons.Filled.Theaters)
     data object Music    : Tab("music",    "Music",    Icons.Filled.MusicNote)
     data object Ai       : Tab("ai",       "AI",       Icons.Filled.AutoAwesome)
     data object Library  : Tab("library",  "Library",  Icons.Filled.Bookmarks)
+    data object Adult    : Tab("adult",    "Adult",    Icons.Filled.Whatshot)
     data object Settings : Tab("settings", "Settings", Icons.Filled.Settings)
 }
-private val TABS = listOf(Tab.Movies, Tab.Music, Tab.Ai, Tab.Library, Tab.Settings)
 
 @Composable
 fun AioWebApp() {
@@ -51,19 +61,30 @@ fun AioWebApp() {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
 
+    val context = LocalContext.current
+    val sl = remember { ServiceLocator.get(context) }
+    val nsfwEnabled by sl.settings.nsfwEnabled.collectAsState(initial = false)
+
+    val tabs = remember(nsfwEnabled) {
+        if (nsfwEnabled) {
+            listOf(Tab.Movies, Tab.Music, Tab.Ai, Tab.Adult, Tab.Settings)
+        } else {
+            listOf(Tab.Movies, Tab.Music, Tab.Ai, Tab.Library, Tab.Settings)
+        }
+    }
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
         bottomBar = {
-            // Hide bottom bar on detail screens
-            val showBar = currentRoute == null || TABS.any { it.route == currentRoute }
+            val showBar = currentRoute == null || tabs.any { it.route == currentRoute }
             if (showBar) {
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface,
                     tonalElevation = 0.dp,
                 ) {
-                    TABS.forEach { tab ->
+                    tabs.forEach { tab ->
                         val selected = currentRoute == tab.route
                         NavigationBarItem(
                             selected = selected,
@@ -94,7 +115,9 @@ fun AioWebApp() {
                 navController = nav,
                 startDestination = Tab.Movies.route,
             ) {
-                composable(Tab.Movies.route) { MoviesScreen(onMovieClick = { id -> nav.navigate("movie/$id") }) }
+                composable(Tab.Movies.route) {
+                    MoviesScreen(onMovieClick = { id -> nav.navigate("movie/$id") })
+                }
                 composable(
                     "movie/{id}",
                     arguments = listOf(navArgument("id") { type = NavType.LongType })
@@ -107,7 +130,30 @@ fun AioWebApp() {
                 composable(Tab.Music.route)    { MusicScreen() }
                 composable(Tab.Ai.route)       { AiScreen() }
                 composable(Tab.Library.route)  { LibraryScreen() }
-                composable(Tab.Settings.route) { SettingsScreen() }
+                composable(Tab.Adult.route) {
+                    AdultScreen(onPlay = { embed, title ->
+                        val e = URLEncoder.encode(embed, "UTF-8")
+                        val t = URLEncoder.encode(title, "UTF-8")
+                        nav.navigate("adult-player/$e/$t")
+                    })
+                }
+                composable(
+                    "adult-player/{embed}/{title}",
+                    arguments = listOf(
+                        navArgument("embed") { type = NavType.StringType },
+                        navArgument("title") { type = NavType.StringType },
+                    )
+                ) {
+                    val embed = URLDecoder.decode(it.arguments!!.getString("embed")!!, "UTF-8")
+                    val title = URLDecoder.decode(it.arguments!!.getString("title")!!, "UTF-8")
+                    AdultPlayerScreen(embed, title) { nav.popBackStack() }
+                }
+                composable(Tab.Settings.route) {
+                    SettingsScreen(onOpenPlugins = { nav.navigate("plugins") })
+                }
+                composable("plugins") {
+                    PluginsScreen(onBack = { nav.popBackStack() })
+                }
             }
         }
     }
