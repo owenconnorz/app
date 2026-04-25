@@ -3,6 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+import java.util.Properties
+
+// Optional local keystore properties (for local release builds)
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) load(f.inputStream())
+}
+
 android {
     namespace = "com.aioweb.app"
     compileSdk = 34
@@ -17,13 +25,40 @@ android {
         buildConfigField("String", "APP_URL", "\"https://v0-ai-image-and-text-generator.vercel.app\"")
     }
 
+    signingConfigs {
+        create("release") {
+            // Resolution order: env vars (CI) → keystore.properties (local) → null (skip signing)
+            val ksPath = System.getenv("KEYSTORE_PATH") ?: keystoreProps["storeFile"]?.toString()
+            val ksPassword = System.getenv("KEYSTORE_PASSWORD") ?: keystoreProps["storePassword"]?.toString()
+            val ksKeyAlias = System.getenv("KEY_ALIAS") ?: keystoreProps["keyAlias"]?.toString()
+            val ksKeyPassword = System.getenv("KEY_PASSWORD") ?: keystoreProps["keyPassword"]?.toString()
+
+            if (ksPath != null && file(ksPath).exists() && ksPassword != null && ksKeyAlias != null && ksKeyPassword != null) {
+                storeFile = file(ksPath)
+                storePassword = ksPassword
+                keyAlias = ksKeyAlias
+                keyPassword = ksKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Only attach signingConfig if keystore is actually configured
+            val rel = signingConfigs.getByName("release")
+            if (rel.storeFile != null) {
+                signingConfig = rel
+            }
         }
         debug {
             isDebuggable = true
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
         }
     }
     compileOptions {
