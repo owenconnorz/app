@@ -110,33 +110,56 @@ class PluginRepository(private val context: Context) {
         http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) error("HTTP ${resp.code} ${resp.message}")
             val body = resp.body?.string().orEmpty()
-            // Try array form first
-            val array = runCatching {
-                Net.json.parseToJsonElement(body) as? JsonArray
-            }.getOrNull()
-            if (array != null) {
-                return array.mapNotNull {
-                    runCatching {
-                        Net.json.decodeFromJsonElement(CloudStreamPlugin.serializer(), it)
-                    }.getOrNull()
-                }
-            }
-            // Then object with `pluginLists` field
-            val obj = runCatching {
-                Net.json.parseToJsonElement(body) as? JsonObject
-            }.getOrNull()
-            if (obj != null) {
-                val plugins = obj["pluginLists"] as? JsonArray
-                if (plugins != null) {
-                    return plugins.mapNotNull {
-                        runCatching {
-                            Net.json.decodeFromJsonElement(CloudStreamPlugin.serializer(), it)
-                        }.getOrNull()
+            val element = runCatching { Net.json.parseToJsonElement(body) }.getOrNull()
+                ?: error("Response is not JSON")
+            return parsePluginsFromAny(element)
+        }
+    }
+
+    /**
+     * Walks any JSON shape and pulls out objects that look like CloudStream plugins.
+     * Real-world repo shapes seen in the wild:
+     *   • Top-level array of plugin objects (recloudstream)
+     *   • Object with `pluginLists` key (older recloudstream)
+     *   • Object with `plugins` key (some forks)
+     *   • Object with `extensions` key (a few forks)
+     *   • Object whose values are themselves plugin arrays per category
+     */
+    private fun parsePluginsFromAny(element: kotlinx.serialization.json.JsonElement): List<CloudStreamPlugin> {
+        val out = mutableListOf<CloudStreamPlugin>()
+        fun looksLikePlugin(o: JsonObject): Boolean {
+            val hasName = o.containsKey("name")
+            val hasUrl = o.containsKey("url") || o.containsKey("jarUrl") || o.containsKey("download")
+            return hasName && hasUrl
+        }
+        fun visit(el: kotlinx.serialization.json.JsonElement) {
+            when (el) {
+                is JsonArray -> {
+                    if (el.all { it is JsonObject && looksLikePlugin(it) }) {
+                        el.forEach { jo ->
+                            runCatching {
+                                Net.json.decodeFromJsonElement(CloudStreamPlugin.serializer(), jo)
+                            }.getOrNull()?.let(out::add)
+                        }
+                    } else {
+                        el.forEach { visit(it) }
                     }
                 }
+                is JsonObject -> {
+                    // A few repos put the array under a known key — check first.
+                    listOf("pluginLists", "plugins", "extensions").forEach { k ->
+                        (el[k] as? JsonArray)?.let { visit(it) }
+                    }
+                    if (out.isEmpty()) {
+                        // Fallback: walk every value.
+                        el.values.forEach { visit(it) }
+                    }
+                }
+                else -> { /* primitive */ }
             }
-            return emptyList()
         }
+        visit(element)
+        return out.distinctBy { (it.internalName ?: it.name) + "|" + it.downloadUrl }
     }
 
     suspend fun installPlugin(repo: CloudStreamRepo, plugin: CloudStreamPlugin): InstalledPlugin =

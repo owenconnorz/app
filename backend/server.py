@@ -7,6 +7,7 @@ import os
 import logging
 import uuid
 import base64
+import httpx
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
@@ -130,8 +131,69 @@ async def ai_image(req: ImageRequest):
         raise HTTPException(500, f"AI image gen failed: {e}")
 
 
+# ------- AI: NSFW image generation via fal.ai -------
+# The Emergent Universal Key (Nano Banana / GPT-Image-1) blocks NSFW prompts.
+# fal.ai exposes uncensored SDXL/RealVis models. Users supply their own fal.ai
+# API key on-device (Settings → fal.ai key) — we just proxy the request so the
+# key never leaves their network in plaintext.
+class NsfwImageRequest(BaseModel):
+    prompt: str
+    fal_key: str
+    model: str = "fal-ai/fast-sdxl"  # standard SDXL via fal.ai; supports enable_safety_checker=false
+    image_size: str = "square_hd"
+    num_inference_steps: int = 28
+    negative_prompt: Optional[str] = "blurry, low quality, distorted, watermark"
+
+
+@api_router.post("/ai/image_nsfw", response_model=ImageResponse)
+async def ai_image_nsfw(req: NsfwImageRequest):
+    if not req.fal_key.strip():
+        raise HTTPException(400, "fal.ai API key required. Get one free at fal.ai/dashboard then add it in Settings.")
+    payload = {
+        "prompt": req.prompt,
+        "image_size": req.image_size,
+        "num_inference_steps": req.num_inference_steps,
+        "enable_safety_checker": False,
+    }
+    if req.negative_prompt:
+        payload["negative_prompt"] = req.negative_prompt
+    try:
+        async with httpx.AsyncClient(timeout=120) as cx:
+            r = await cx.post(
+                f"https://fal.run/{req.model}",
+                headers={
+                    "Authorization": f"Key {req.fal_key.strip()}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            if r.status_code != 200:
+                raise HTTPException(r.status_code, f"fal.ai returned HTTP {r.status_code}: {r.text[:300]}")
+            data = r.json()
+            urls = [img.get("url") for img in data.get("images", []) if img.get("url")]
+            if not urls:
+                raise HTTPException(500, "fal.ai response had no images")
+            # Download each image and return as base64 (keeps the client interface identical
+            # to /api/ai/image — the Compose ImageBitmap decoder is already wired for this).
+            b64_list: List[str] = []
+            for u in urls:
+                ir = await cx.get(u)
+                if ir.status_code == 200:
+                    b64_list.append(base64.b64encode(ir.content).decode("ascii"))
+            mime = "image/png"
+            return ImageResponse(
+                text=f"Generated via {req.model} on fal.ai",
+                images=b64_list,
+                mime_type=mime,
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception("ai_image_nsfw failed")
+        raise HTTPException(500, f"NSFW image gen failed: {e}")
+
+
 # ------- TMDB proxy (keeps API key off-device, optional) -------
-import httpx
 TMDB_API_KEY = os.environ.get('TMDB_API_KEY', '')  # optional; if blank, app uses a public read key
 TMDB_BASE = "https://api.themoviedb.org/3"
 

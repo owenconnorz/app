@@ -28,6 +28,17 @@ data class ImageRequest(
 )
 
 @Serializable
+data class NsfwImageRequest(
+    val prompt: String,
+    @SerialName("fal_key") val falKey: String,
+    val model: String = "fal-ai/fast-sdxl",
+    @SerialName("image_size") val imageSize: String = "square_hd",
+    @SerialName("num_inference_steps") val numInferenceSteps: Int = 28,
+    @SerialName("negative_prompt") val negativePrompt: String? =
+        "blurry, low quality, distorted, watermark",
+)
+
+@Serializable
 data class ImageResponse(
     val text: String,
     val images: List<String>,
@@ -40,4 +51,7 @@ interface AioWebBackendApi {
 
     @POST("api/ai/image")
     suspend fun image(@Body req: ImageRequest): ImageResponse
+
+    @POST("api/ai/image_nsfw")
+    suspend fun imageNsfw(@Body req: NsfwImageRequest): ImageResponse
 }

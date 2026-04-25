@@ -140,6 +140,32 @@ fun AiScreen() {
                             unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                         )
                     )
+                    // NSFW (uncensored) toggle — proxies to fal.ai using the user's key.
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "NSFW (uncensored)",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                if (state.nsfwMode)
+                                    "Routed to fal.ai · uses your fal.ai API key (Settings)"
+                                else
+                                    "Off — uses Nano Banana with safety filters",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = state.nsfwMode, onCheckedChange = vm::setNsfwMode)
+                    }
                     Button(
                         onClick = vm::generateImage,
                         enabled = !state.imageLoading && state.imagePrompt.isNotBlank(),
@@ -154,7 +180,10 @@ fun AiScreen() {
                         } else {
                             Icon(Icons.Default.AutoAwesome, null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Generate with Nano Banana")
+                            Text(
+                                if (state.nsfwMode) "Generate with fal.ai (uncensored)"
+                                else "Generate with Nano Banana"
+                            )
                         }
                     }
                     state.imageError?.let {

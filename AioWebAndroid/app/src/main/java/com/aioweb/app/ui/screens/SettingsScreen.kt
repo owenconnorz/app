@@ -66,6 +66,7 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
     var pluginsCacheBytes by remember { mutableStateOf(0L) }
     var showQualityVideoDialog by remember { mutableStateOf(false) }
     var showQualityAudioDialog by remember { mutableStateOf(false) }
+    var falKey by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         url = sl.settings.backendUrl.first()
@@ -78,6 +79,7 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
         autoplay = sl.settings.autoplayNext.first()
         subs = sl.settings.subtitlesEnabled.first()
         dlWifi = sl.settings.downloadOverWifiOnly.first()
+        falKey = sl.settings.falApiKey.first()
         pluginsCacheBytes = pluginRepo.pluginsCacheSize()
     }
 
@@ -166,7 +168,19 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
                 onValueChange = { url = it; saved = false },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Backend URL") },
-                supportingText = { Text("Your AioWeb FastAPI deployment.") },
+                supportingText = { Text("Your StreamCloud FastAPI deployment.") },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                colors = settingsTfColors(),
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = falKey,
+                onValueChange = { falKey = it; saved = false },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("fal.ai API key (optional, for NSFW image gen)") },
+                supportingText = { Text("Get a free key at fal.ai/dashboard. Stored on-device only.") },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -256,6 +270,7 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
                     sl.settings.setBackendUrl(url.trim().trimEnd('/'))
                     sl.settings.setAiProvider(provider)
                     sl.settings.setAiModel(model)
+                    sl.settings.setFalApiKey(falKey.trim())
                     saved = true
                 }
             },
@@ -264,7 +279,7 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
         ) {
             Icon(if (saved) Icons.Default.Check else Icons.Default.Cloud, null)
             Spacer(Modifier.width(8.dp))
-            Text(if (saved) "Saved" else "Save backend & AI defaults")
+            Text(if (saved) "Saved" else "Save backend, AI defaults & fal.ai key")
         }
         Spacer(Modifier.height(40.dp))
     }

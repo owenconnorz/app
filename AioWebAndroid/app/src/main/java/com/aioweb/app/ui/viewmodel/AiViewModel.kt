@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.aioweb.app.data.ServiceLocator
 import com.aioweb.app.data.api.ChatRequest
 import com.aioweb.app.data.api.ImageRequest
+import com.aioweb.app.data.api.NsfwImageRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +27,7 @@ data class AiState(
     val imageLoading: Boolean = false,
     val imageError: String? = null,
     val generatedImageBase64: String? = null,
+    val nsfwMode: Boolean = false,
 )
 
 class AiViewModel(private val sl: ServiceLocator) : ViewModel() {
@@ -65,13 +67,31 @@ class AiViewModel(private val sl: ServiceLocator) : ViewModel() {
         _state.update { it.copy(imagePrompt = s) }
     }
 
+    fun setNsfwMode(enabled: Boolean) {
+        _state.update { it.copy(nsfwMode = enabled, imageError = null) }
+    }
+
     fun generateImage() {
         val prompt = _state.value.imagePrompt
         if (prompt.isBlank()) return
         _state.update { it.copy(imageLoading = true, imageError = null, generatedImageBase64 = null) }
         viewModelScope.launch {
             try {
-                val resp = sl.backend().image(ImageRequest(prompt = prompt))
+                val resp = if (_state.value.nsfwMode) {
+                    val falKey = sl.settings.falApiKey.first()
+                    if (falKey.isBlank()) {
+                        _state.update {
+                            it.copy(
+                                imageLoading = false,
+                                imageError = "NSFW mode requires a fal.ai API key. Add it in Settings → fal.ai key (free at fal.ai/dashboard).",
+                            )
+                        }
+                        return@launch
+                    }
+                    sl.backend().imageNsfw(NsfwImageRequest(prompt = prompt, falKey = falKey))
+                } else {
+                    sl.backend().image(ImageRequest(prompt = prompt))
+                }
                 val first = resp.images.firstOrNull()
                 _state.update {
                     it.copy(
