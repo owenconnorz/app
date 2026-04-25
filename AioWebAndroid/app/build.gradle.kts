@@ -1,11 +1,11 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.24"
 }
 
 import java.util.Properties
 
-// Optional local keystore properties (for local release builds)
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
     if (f.exists()) load(f.inputStream())
@@ -22,12 +22,17 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
-        buildConfigField("String", "APP_URL", "\"https://v0-ai-image-and-text-generator.vercel.app\"")
+        // Backend base URL (override in Settings screen at runtime via DataStore)
+        buildConfigField(
+            "String", "DEFAULT_BACKEND_URL",
+            "\"https://aio-android-port.preview.emergentagent.com\""
+        )
+        // TMDB v3 API key (free public dev key – users can override in Settings)
+        buildConfigField("String", "TMDB_API_KEY", "\"8265bd1679663a7ea12ac168da84d2e8\"")
     }
 
     signingConfigs {
         create("release") {
-            // Resolution order: env vars (CI) → keystore.properties (local) → null (skip signing)
             val ksPath = System.getenv("KEYSTORE_PATH") ?: keystoreProps["storeFile"]?.toString()
             val ksPassword = System.getenv("KEYSTORE_PASSWORD") ?: keystoreProps["storePassword"]?.toString()
             val ksKeyAlias = System.getenv("KEY_ALIAS") ?: keystoreProps["keyAlias"]?.toString()
@@ -49,11 +54,8 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Only attach signingConfig if keystore is actually configured
             val rel = signingConfigs.getByName("release")
-            if (rel.storeFile != null) {
-                signingConfig = rel
-            }
+            if (rel.storeFile != null) signingConfig = rel
         }
         debug {
             isDebuggable = true
@@ -67,23 +69,72 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+        freeCompilerArgs += listOf("-opt-in=kotlin.RequiresOptIn")
     }
     buildFeatures {
-        viewBinding = true
+        compose = true
+        buildConfig = true
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/DEPENDENCIES"
+            excludes += "META-INF/LICENSE*"
+            excludes += "META-INF/NOTICE*"
         }
     }
 }
 
 dependencies {
+    // Core Android
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
-    implementation("androidx.webkit:webkit:1.11.0")
-    implementation("androidx.activity:activity-ktx:1.9.2")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
+
+    // Compose BOM
+    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.navigation:navigation-compose:2.8.0")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Kotlin Coroutines + Serialization
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
+
+    // Networking (Retrofit + OkHttp + Kotlinx serialization converter)
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // Coil image loading
+    implementation("io.coil-kt:coil-compose:2.7.0")
+
+    // DataStore
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // Media3 ExoPlayer (audio + video)
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-dash:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("androidx.media3:media3-session:1.4.1")
+    implementation("androidx.media3:media3-common:1.4.1")
+
+    // NewPipe Extractor (YouTube music/videos without API keys)
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.2")
+    implementation("org.jsoup:jsoup:1.17.2")
+
+    // WorkManager (download queue)
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 }

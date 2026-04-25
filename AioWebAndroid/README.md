@@ -1,108 +1,156 @@
 # AioWeb Android (Kotlin)
 
-Native Android (Kotlin) companion app for [AioWeb](https://github.com/owenconnorz/AioWeb) — your all-in-one platform for Movies, Music, AI, Pictures, and Downloads.
+A **fully native Kotlin Android app** for AioWeb — Movies, Music, AI, and Library — built with Jetpack Compose + Material 3.
 
-This is a separate repository from the web app. The web project (`AioWeb`) continues to live as the deployed web/PWA experience; this repo packages it as a sideloadable Android APK with native enhancements.
+> This is a brand-new native rewrite, separate from the [AioWeb web project](https://github.com/owenconnorz/AioWeb). The web app continues to live as a deployed PWA; this repo is the native Android edition that you sideload as an APK.
+
+## Features
+
+| Tab | What it does | Native tech |
+|---|---|---|
+| 🎬 **Movies** | Trending + popular browse, search, full detail screen, trailer playback, Vidsrc embed | TMDB v3 REST API · Coil image loading · Compose grid/lazy-row · ExoPlayer-ready |
+| 🎵 **Music** | Search YouTube music, audio-only playback, mini-player, background-ready | NewPipe Extractor · Media3 ExoPlayer · MediaSessionService |
+| 🤖 **AI** | Chat with GPT-5.1 / Claude Sonnet 4.5 / Gemini 2.5 Pro · Generate images with Nano Banana | Backend proxy (FastAPI + emergentintegrations) · Universal LLM Key |
+| 📚 **Library** | Saved movies/songs/AI creations | DataStore (Room expansion planned) |
+| ⚙️ **Settings** | Backend URL · default LLM provider/model | DataStore Preferences |
 
 ## Architecture
 
-A native Kotlin Android shell that loads the deployed AioWeb web app inside a hardened, full-featured `WebView` and adds true Android capabilities:
+```
+┌─────────────────────────────────────────┐
+│   AIOWEB ANDROID (Kotlin / Compose)     │
+├─────────────────────────────────────────┤
+│ UI: Jetpack Compose · Material 3        │
+│   ↳ MoviesScreen / MusicScreen /        │
+│     AiScreen / LibraryScreen / Settings │
+│ ViewModels: StateFlow + Coroutines      │
+│ Net: Retrofit + Kotlinx Serialization   │
+│ Audio: Media3 ExoPlayer + MediaSession  │
+│ Music sources: NewPipe Extractor        │
+│ Image loading: Coil                     │
+│ Storage: DataStore Preferences          │
+└─────────────────────────────────────────┘
+            │            │            │
+            ▼            ▼            ▼
+     ┌────────────┐ ┌──────────┐ ┌──────────────┐
+     │ TMDB API   │ │ YouTube  │ │ AioWeb       │
+     │ (movies)   │ │ (NewPipe)│ │ FastAPI      │
+     └────────────┘ └──────────┘ │  /api/ai/*   │
+                                 └──────┬───────┘
+                                        ▼
+                          ┌─────────────────────────────┐
+                          │ emergentintegrations        │
+                          │   ↳ OpenAI / Anthropic /    │
+                          │     Gemini · Nano Banana    │
+                          └─────────────────────────────┘
+```
 
-| Native feature | Implementation |
-|---|---|
-| Hardware-accelerated WebView | `MainActivity` with multi-window support, JS, DOM storage, third-party cookies |
-| File uploads (image picker, AI face-swap, etc.) | `WebChromeClient.onShowFileChooser` → ActivityResult API |
-| Native fullscreen video / immersive mode | `onShowCustomView` / `onHideCustomView` |
-| Native downloads (movies, AI images, music) | `DownloadManager` → public `Downloads/` with notification |
-| Camera & mic (AI face-swap, voice prompts) | Runtime permissions + `PermissionRequest` grant in WebView |
-| Pull-to-refresh | `SwipeRefreshLayout` |
-| Back-stack navigation | `OnBackPressedDispatcher` + WebView history |
-| Splash screen | `Theme.AioWeb.Splash` with brand-colored layered drawable |
-| External links open in browser | URL filtering in `shouldOverrideUrlLoading` |
-| Persistent sessions | Cookie persistence across launches |
-| Modern OS support | minSdk 24 (Android 7+), targetSdk 34 (Android 14) |
+This is **NOT a WebView wrapper** — every screen is native Compose. The only network dependencies are:
+- **TMDB** (free public read key) for movie metadata
+- **YouTube** via NewPipe Extractor (no API key, audio extraction at runtime)
+- **AioWeb FastAPI backend** (deployable from `/app/backend/` of the parent web repo) for AI calls
 
 ## Tech stack
 
-- Kotlin 1.9.24
-- Android Gradle Plugin 8.5.2
-- Gradle 8.7 / JDK 17
-- AndroidX (`appcompat`, `core-ktx`, `webkit`, `swiperefreshlayout`, `material3`)
+- Kotlin 1.9.24 · Android Gradle Plugin 8.5.2 · Gradle 8.7 · JDK 17
+- Jetpack Compose BOM 2024.06.00 · Compose Compiler 1.5.14
+- Material 3 · material-icons-extended
+- Retrofit 2.11 · OkHttp 4.12 · Kotlinx Serialization 1.7
+- Media3 1.4.1 (ExoPlayer + Session)
+- NewPipe Extractor 0.24.2
+- Coil 2.7 · DataStore 1.1 · WorkManager 2.9
 - minSdk 24 · targetSdk 34 · compileSdk 34
 
-## How the APK is built
+## Build & install
 
-You don't need Android Studio installed. Every push to `main` triggers GitHub Actions which:
-
-1. Spins up an Ubuntu x86_64 runner
-2. Installs JDK 17 + Android SDK
-3. Runs `./gradlew assembleDebug`
-4. Uploads `AioWeb-debug-<build>.apk` as a workflow artifact
-5. Creates a GitHub Release tagged `build-<n>` with the APK attached
+The container that scaffolded this project is ARM64 Linux, so APKs are built on **GitHub Actions x86_64 runners** (free).
 
 ### Get the APK
+1. Push this repo to GitHub
+2. Add 4 release-signing secrets (see "Release signing" below)
+3. Wait for the **Build APK** workflow to complete (~3-5 min)
+4. Download from **Releases** tab → `AioWeb-release-signed-N.apk` → sideload onto Android
 
-After pushing this repo to GitHub:
-
-1. Go to **Actions** tab → latest "Build Debug APK" run → scroll to **Artifacts** → download `AioWeb-debug-apk`.
-2. Or check the **Releases** page for the latest auto-tagged `build-<n>` release.
-3. Transfer the `.apk` to your Android device, allow "Install unknown apps" for your file manager / browser, and tap to install.
-
-### Build locally (requires x86_64 host or Android Studio)
-
+### Build locally (x86_64 host or Android Studio)
 ```bash
 git clone <this-repo>
 cd AioWebAndroid
 ./gradlew assembleDebug
-# Output: app/build/outputs/apk/debug/app-debug.apk
+# APK: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-> ⚠️ Note: building on an arm64 Linux container without Android Studio is non-trivial because Google's official `aapt2` is x86_64-only. Use Android Studio, an x86_64 Linux/macOS host, or just rely on the GitHub Actions pipeline.
+## Release signing
+
+CI builds signed-release APKs when these GitHub Secrets are configured:
+
+| Secret | Value |
+|---|---|
+| `KEYSTORE_BASE64` | base64 of `release.keystore` |
+| `KEYSTORE_PASSWORD` | store password |
+| `KEY_ALIAS` | key alias (default `aioweb`) |
+| `KEY_PASSWORD` | key password |
+
+Generate a keystore yourself with `./scripts/generate-keystore.sh` — it prints all four values for you to paste into GitHub.
+
+Without secrets, CI falls back to producing only the debug APK + an unsigned-release APK.
 
 ## Configuration
 
-The web URL the app loads is set in `app/build.gradle.kts`:
-
+The default backend URL is set at build time:
 ```kotlin
-buildConfigField("String", "APP_URL", "\"https://v0-ai-image-and-text-generator.vercel.app\"")
+buildConfigField("String", "DEFAULT_BACKEND_URL", "\"https://aio-android-port.preview.emergentagent.com\"")
 ```
 
-To point at a different deployment (e.g., your own Vercel/Netlify URL), edit that one line and rebuild.
+End users can override this at runtime in **Settings → Backend URL**.
+
+To use your own TMDB API key, change `TMDB_API_KEY` in `app/build.gradle.kts`.
+
+## Backend setup
+
+The AI features (Chat + Image gen) call your FastAPI backend at:
+- `POST /api/ai/chat` — text generation via emergentintegrations
+- `POST /api/ai/image` — Nano Banana image generation
+
+The backend is at `/app/backend/server.py` of the parent AioWeb repo. Deploy via Vercel/Render/Railway/Emergent and put the URL in Settings.
 
 ## Project structure
 
 ```
 AioWebAndroid/
-├── app/
-│   ├── build.gradle.kts
-│   ├── proguard-rules.pro
-│   └── src/main/
-│       ├── AndroidManifest.xml
-│       ├── java/com/aioweb/app/
-│       │   ├── AioWebApplication.kt    # WebView multi-process safety
-│       │   └── MainActivity.kt         # WebView host + downloads + fullscreen
-│       └── res/
-│           ├── layout/activity_main.xml
-│           ├── values/{strings,colors,themes}.xml
-│           └── drawable/
-├── build.gradle.kts                    # root
-├── settings.gradle.kts
-├── gradle.properties
-├── gradle/wrapper/
-├── gradlew, gradlew.bat
-└── .github/workflows/build-apk.yml     # CI APK builder
+├── app/src/main/
+│   ├── AndroidManifest.xml
+│   ├── java/com/aioweb/app/
+│   │   ├── MainActivity.kt              # Compose host
+│   │   ├── AioWebApplication.kt         # NewPipe init
+│   │   ├── audio/
+│   │   │   └── MusicPlaybackService.kt  # Media3 background service
+│   │   ├── data/
+│   │   │   ├── ServiceLocator.kt
+│   │   │   ├── SettingsRepository.kt
+│   │   │   ├── api/{TmdbApi,AioWebBackendApi}.kt
+│   │   │   ├── network/Net.kt
+│   │   │   └── newpipe/{Downloader,Repository}.kt
+│   │   └── ui/
+│   │       ├── AioWebApp.kt             # Bottom nav + NavHost
+│   │       ├── theme/{Theme,Color}.kt
+│   │       ├── screens/                 # 5 tabs + movie detail
+│   │       └── viewmodel/               # State holders
+│   └── res/                             # icons, themes, strings
+├── .github/workflows/build-apk.yml      # CI: debug + signed release
+├── scripts/generate-keystore.sh
+├── build.gradle.kts · settings.gradle.kts
+└── gradlew · gradlew.bat
 ```
 
-## What this app is NOT
+## What's still planned
 
-This is intentionally a **WebView-shell architecture**, not a full native rewrite of AioWeb's TypeScript codebase. A native rewrite of every feature (Movies plugin engine, YouTube Music via `youtubei.js`, Replicate image gen, Promptchan, Gradio AI, P2P torrent streaming via WebTorrent, Supabase auth, dashjs/hls.js players, etc.) would be a multi-month effort and would require re-implementing every integration in Kotlin equivalents.
-
-The shell approach gives you:
-- Instant feature parity with the web app
-- One source of truth (every web update ships to Android automatically)
-- Native install + launcher icon + offline cache + push-style installs
-- Native downloads, file picker, fullscreen video, camera/mic — none of which the PWA can do reliably
+- 📥 Native download manager (WorkManager + Room) — currently stubbed Library tab
+- 🔐 Supabase auth (optional — kept off the critical path)
+- 🎞️ Native HLS/DASH video player UI (Media3 component already configured)
+- 🎬 Movie scraper plugin port from the web project's TS plugin system
+- 🎨 AI image-to-image editing (face swap)
+- 📦 Per-ABI APK splits + AAB for Play Store
 
 ## License
 
-Same license as the parent AioWeb project.
+Same as the parent AioWeb project.

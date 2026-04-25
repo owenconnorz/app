@@ -1,0 +1,85 @@
+package com.aioweb.app.data.api
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import retrofit2.http.GET
+import retrofit2.http.Query
+
+@Serializable
+data class TmdbMovie(
+    val id: Long,
+    val title: String? = null,
+    val name: String? = null,
+    @SerialName("poster_path") val posterPath: String? = null,
+    @SerialName("backdrop_path") val backdropPath: String? = null,
+    @SerialName("vote_average") val voteAverage: Double = 0.0,
+    @SerialName("release_date") val releaseDate: String? = null,
+    val overview: String? = null,
+) {
+    val displayTitle: String get() = title ?: name ?: "Untitled"
+    val posterUrl: String? get() = posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
+    val backdropUrl: String? get() = backdropPath?.let { "https://image.tmdb.org/t/p/w780$it" }
+}
+
+@Serializable
+data class TmdbListResponse(
+    val page: Int = 1,
+    val results: List<TmdbMovie> = emptyList(),
+    @SerialName("total_pages") val totalPages: Int = 1,
+)
+
+@Serializable
+data class TmdbVideo(
+    val key: String,
+    val site: String,
+    val type: String,
+    val name: String? = null,
+)
+
+@Serializable
+data class TmdbVideosResponse(val results: List<TmdbVideo> = emptyList())
+
+interface TmdbApi {
+    @GET("3/trending/movie/{window}")
+    suspend fun trending(
+        @retrofit2.http.Path("window") window: String = "week",
+        @Query("api_key") apiKey: String,
+    ): TmdbListResponse
+
+    @GET("3/movie/popular")
+    suspend fun popular(
+        @Query("api_key") apiKey: String,
+        @Query("page") page: Int = 1,
+    ): TmdbListResponse
+
+    @GET("3/movie/top_rated")
+    suspend fun topRated(
+        @Query("api_key") apiKey: String,
+        @Query("page") page: Int = 1,
+    ): TmdbListResponse
+
+    @GET("3/movie/now_playing")
+    suspend fun nowPlaying(
+        @Query("api_key") apiKey: String,
+        @Query("page") page: Int = 1,
+    ): TmdbListResponse
+
+    @GET("3/search/movie")
+    suspend fun search(
+        @Query("api_key") apiKey: String,
+        @Query("query") query: String,
+        @Query("page") page: Int = 1,
+    ): TmdbListResponse
+
+    @GET("3/movie/{id}")
+    suspend fun details(
+        @retrofit2.http.Path("id") id: Long,
+        @Query("api_key") apiKey: String,
+    ): TmdbMovie
+
+    @GET("3/movie/{id}/videos")
+    suspend fun videos(
+        @retrofit2.http.Path("id") id: Long,
+        @Query("api_key") apiKey: String,
+    ): TmdbVideosResponse
+}

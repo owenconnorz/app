@@ -1,17 +1,12 @@
 package com.aioweb.app
 
 import android.app.Application
-import android.os.Build
-import android.webkit.WebView
+import org.schabi.newpipe.extractor.NewPipe
 
 class AioWebApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val processName = getProcessName()
-            if (packageName != processName) {
-                WebView.setDataDirectorySuffix(processName)
-            }
-        }
+        // Initialize NewPipe Extractor with our OkHttp-backed downloader
+        NewPipe.init(com.aioweb.app.data.newpipe.NewPipeDownloader.instance)
     }
 }
