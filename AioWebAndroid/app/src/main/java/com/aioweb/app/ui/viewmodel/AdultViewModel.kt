@@ -49,18 +49,17 @@ class AdultViewModel : ViewModel() {
     }
 
     /**
-     * Resolves a direct MP4 URL for the given video.
-     * Returns `null` if no direct stream is exposed by Eporner for that video
-     * (rare — but happens for some studio-exclusive content).
+     * Resolves a direct MP4 URL for the given video. Returns the embed URL if no
+     * direct MP4 is exposed — the player falls back to WebView for embed pages.
      */
-    suspend fun resolveStreamUrl(videoId: String, fallbackEmbed: String): String? {
+    suspend fun resolveStreamUrl(videoId: String, fallbackEmbed: String): String {
         _state.update { it.copy(resolvingId = videoId, error = null) }
         return try {
             val resp = api.details(id = videoId)
-            resp.videos.firstOrNull()?.bestMp4()
+            resp.videos.firstOrNull()?.bestMp4() ?: fallbackEmbed
         } catch (e: Exception) {
             _state.update { it.copy(error = "Stream resolve failed: ${e.message}") }
-            null
+            fallbackEmbed
         } finally {
             _state.update { it.copy(resolvingId = null) }
         }

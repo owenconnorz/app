@@ -125,7 +125,10 @@ fun MovieDetailScreen(movieId: Long, onBack: () -> Unit, onPlayUrl: (url: String
                         text = {
                             Column {
                                 Text(
-                                    "Paste an HTTP(S), HLS (.m3u8), DASH (.mpd), MP4 link, or a magnet:/torrent URL. The native player handles all of them.",
+                                    "Paste any of:\n" +
+                                        "• HTTP(S) URL — MP4 / MKV / WEBM / HLS (.m3u8) / DASH (.mpd)\n" +
+                                        "• magnet: link or .torrent URL — streams via P2P\n" +
+                                        "• Embed page URL or full <iframe> HTML — plays via WebView",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -133,7 +136,7 @@ fun MovieDetailScreen(movieId: Long, onBack: () -> Unit, onPlayUrl: (url: String
                                 OutlinedTextField(
                                     value = customUrl,
                                     onValueChange = { customUrl = it },
-                                    placeholder = { Text("magnet:?xt=urn:btih:… or https://…/movie.mp4") },
+                                    placeholder = { Text("https://… · magnet:?… · <iframe src=\"…\">") },
                                     singleLine = false,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
@@ -141,7 +144,7 @@ fun MovieDetailScreen(movieId: Long, onBack: () -> Unit, onPlayUrl: (url: String
                         },
                         confirmButton = {
                             TextButton(onClick = {
-                                val u = customUrl.trim()
+                                val u = com.aioweb.app.player.extractEmbedUrl(customUrl)
                                 showPlayUrl = false
                                 if (u.isNotEmpty()) {
                                     onPlayUrl(u, movie?.displayTitle ?: "Playback")

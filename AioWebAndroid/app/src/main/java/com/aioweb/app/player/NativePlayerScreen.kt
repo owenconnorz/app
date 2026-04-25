@@ -103,7 +103,25 @@ fun NativePlayerScreen(
 
     // --- ExoPlayer ------------------------------------------------------------------------------
     val player = remember { mutableStateOf<ExoPlayer?>(null) }
-    LaunchedEffect(resolvedUrl) {
+    val needsWebView = remember(resolvedUrl) {
+        val u = resolvedUrl?.lowercase().orEmpty()
+        u.isNotEmpty() && !u.startsWith("http://127.0.0.1") &&
+            !u.endsWith(".mp4") && !u.endsWith(".mkv") && !u.endsWith(".webm") &&
+            !u.endsWith(".m4v") && !u.endsWith(".mov") &&
+            !u.contains(".m3u8") && !u.contains(".mpd") &&
+            !u.startsWith("magnet:") &&
+            // Common embed URL hints — Eporner, vidsrc, etc.
+            (u.contains("/embed") || u.contains("/iframe") || u.contains("/video/") ||
+             u.endsWith(".html") || u.endsWith("/"))
+    }
+
+    LaunchedEffect(resolvedUrl, needsWebView) {
+        if (needsWebView) {
+            // Don't build ExoPlayer for HTML embed pages — WebView handles them.
+            player.value?.release()
+            player.value = null
+            return@LaunchedEffect
+        }
         val url = resolvedUrl ?: return@LaunchedEffect
         val httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
@@ -189,7 +207,9 @@ fun NativePlayerScreen(
             .background(Color.Black)
     ) {
         // --- Video surface ---------------------------------------------------------------------
-        if (ex != null) {
+        if (needsWebView && resolvedUrl != null) {
+            EmbedWebView(resolvedUrl!!)
+        } else if (ex != null) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
@@ -225,9 +245,9 @@ fun NativePlayerScreen(
             )
         }
 
-        // --- Overlay (top bar + center play + bottom bar) --------------------------------------
+        // --- Overlay (top bar + center play + bottom bar) — only for ExoPlayer mode ----------
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = controlsVisible && !needsWebView,
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
@@ -322,8 +342,32 @@ fun NativePlayerScreen(
             }
         }
 
+        // --- Top bar for WebView mode (just back button + title) -----------------------------
+        if (needsWebView) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent))
+                    )
+                    .padding(top = 12.dp, start = 8.dp, end = 16.dp, bottom = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+                }
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                )
+            }
+        }
+
         // --- Loading / error states ------------------------------------------------------------
-        if (ex == null) {
+        if (ex == null && !needsWebView) {
             Column(
                 Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -380,4 +424,47 @@ private fun formatTime(ms: Long): String {
     val s = totalSec % 60
     return if (h > 0) String.format("%d:%02d:%02d", h, m, s)
     else String.format("%d:%02d", m, s)
+}
+
+/**
+ * Renders an HTML embed page in a fullscreen WebView. Used when the resolved URL
+ * isn't a direct media stream (e.g., Eporner embed pages, plugin iframe sources).
+ */
+@Composable
+private fun EmbedWebView(url: String) {
+    AndroidView(
+        modifier = Modifier.fillMaxSize().background(Color.Black),
+        factory = { ctx ->
+            android.webkit.WebView(ctx).apply {
+                setBackgroundColor(android.graphics.Color.BLACK)
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.mediaPlaybackRequiresUserGesture = false
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                settings.useWideViewPort = true
+                settings.loadWithOverviewMode = true
+                webChromeClient = android.webkit.WebChromeClient()
+                webViewClient = android.webkit.WebViewClient()
+                loadUrl(url)
+            }
+        },
+    )
+}
+
+/**
+ * Extracts a playable URL from a user-pasted string. Accepts:
+ *  - A bare URL  → returned as-is
+ *  - A magnet:   → returned as-is
+ *  - An HTML `<iframe ... src="...">` snippet → returns the `src` attribute
+ *  - A `<video src="...">` snippet → returns the `src` attribute
+ */
+fun extractEmbedUrl(input: String): String {
+    val s = input.trim()
+    if (s.isEmpty()) return s
+    if (s.startsWith("magnet:", true)) return s
+    if (s.startsWith("http://", true) || s.startsWith("https://", true)) return s
+    // Pull `src="..."` from any iframe / video / source tag.
+    val srcRegex = Regex("""src\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+    return srcRegex.find(s)?.groupValues?.get(1)?.takeIf { it.isNotBlank() } ?: s
 }

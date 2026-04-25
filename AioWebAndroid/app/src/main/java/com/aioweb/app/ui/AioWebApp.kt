@@ -148,7 +148,9 @@ fun AioWebApp() {
                         nav.navigate("player/eporner/$v/$e/$t")
                     })
                 }
-                // Eporner-specific player: resolves direct MP4 by video id, then plays natively.
+                // Eporner-specific player: resolves direct MP4 by video id (with embed fallback),
+                // then plays natively. If the resolved URL is HTML (embed page), the unified
+                // player falls back to WebView automatically.
                 composable(
                     "player/eporner/{id}/{embed}/{title}",
                     arguments = listOf(
@@ -163,28 +165,15 @@ fun AioWebApp() {
                     val ctx = LocalContext.current
                     val vm: AdultViewModel = viewModel(factory = AdultViewModel.factory(ctx))
                     var resolved by remember { mutableStateOf<String?>(null) }
-                    var resolveFailed by remember { mutableStateOf(false) }
-                    LaunchedEffect(id) {
-                        val url = vm.resolveStreamUrl(id, embed)
-                        if (url == null) resolveFailed = true else resolved = url
-                    }
-                    when {
-                        resolved != null -> NativePlayerScreen(
+                    LaunchedEffect(id) { resolved = vm.resolveStreamUrl(id, embed) }
+                    if (resolved != null) {
+                        NativePlayerScreen(
                             streamUrl = resolved!!,
                             title = title,
                             onBack = { nav.popBackStack() },
                         )
-                        resolveFailed -> Box(
-                            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
-                            contentAlignment = androidx.compose.ui.Alignment.Center,
-                        ) {
-                            Text(
-                                "No direct stream available for this video.",
-                                color = MaterialTheme.colorScheme.onBackground,
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
-                        else -> Box(
+                    } else {
+                        Box(
                             Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
                             contentAlignment = androidx.compose.ui.Alignment.Center,
                         ) { androidx.compose.material3.CircularProgressIndicator() }
