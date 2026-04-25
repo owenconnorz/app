@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -27,6 +29,7 @@ class PluginRepository(private val context: Context) {
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
+        .followRedirects(true)
         .build()
 
     private val pluginsDir: File = File(context.filesDir, "plugins").apply { mkdirs() }
@@ -35,7 +38,7 @@ class PluginRepository(private val context: Context) {
         prefs[KEY_REPOS]?.let {
             runCatching {
                 Net.json.decodeFromString(ListSerializer(CloudStreamRepo.serializer()), it)
-            }.getOrDefault(emptyList())
+            }.getOrDefault(defaultRepos())
         } ?: defaultRepos()
     }
 
@@ -51,13 +54,29 @@ class PluginRepository(private val context: Context) {
         CloudStreamRepo(
             id = "official",
             name = "Recloudstream Official",
-            url = "https://raw.githubusercontent.com/recloudstream/extensions/builds/repo.json",
-        )
+            url = "https://raw.githubusercontent.com/recloudstream/extensions/builds",
+        ),
+        CloudStreamRepo(
+            id = "csx",
+            name = "CSX (CrazyCoder)",
+            url = "https://raw.githubusercontent.com/SaurabhKaperwan/CSX/master",
+        ),
+        CloudStreamRepo(
+            id = "phisher",
+            name = "Phisher98 Extensions",
+            url = "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds",
+        ),
+        CloudStreamRepo(
+            id = "kraken",
+            name = "Cloudstream Kraken",
+            url = "https://raw.githubusercontent.com/Adippe/Cloudstream-Kraken-Extensions/builds",
+        ),
     )
 
     suspend fun addRepo(name: String, url: String) {
         val current = repos.first()
-        val newRepo = CloudStreamRepo(id = UUID.randomUUID().toString(), name = name, url = url)
+        val cleaned = url.trim().trimEnd('/')
+        val newRepo = CloudStreamRepo(id = UUID.randomUUID().toString(), name = name, url = cleaned)
         saveRepos(current + newRepo)
     }
 
@@ -77,43 +96,78 @@ class PluginRepository(private val context: Context) {
     }
 
     /**
-     * Fetch the repository's plugin manifest. Most CS repos serve a simple JSON array
-     * of plugin objects; some serve `{ pluginLists: [...], repos: [...] }`.
+     * Fetch the plugin list. Tries multiple URL forms because CloudStream forks vary:
+     *   1. The given URL as-is
+     *   2. URL + /plugins.json (most common)
+     *   3. URL + /repo.json (older form)
      */
     suspend fun fetchPluginList(repoUrl: String): List<CloudStreamPlugin> = withContext(Dispatchers.IO) {
-        val req = Request.Builder().url(repoUrl).build()
+        val candidates = buildList {
+            val base = repoUrl.trim().trimEnd('/')
+            add(base)
+            if (!base.endsWith(".json")) {
+                add("$base/plugins.json")
+                add("$base/repo.json")
+            }
+        }
+        var lastError: Exception? = null
+        for (url in candidates) {
+            try {
+                val plugins = fetchOne(url)
+                if (plugins.isNotEmpty()) return@withContext plugins
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
+        throw lastError ?: error("No plugins found at $repoUrl")
+    }
+
+    private fun fetchOne(url: String): List<CloudStreamPlugin> {
+        val req = Request.Builder()
+            .url(url)
+            .header("User-Agent", "AioWebAndroid/1.0")
+            .header("Accept", "application/json,text/plain,*/*")
+            .build()
         http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) error("HTTP ${resp.code}")
+            if (!resp.isSuccessful) error("HTTP ${resp.code} at $url")
             val body = resp.body?.string().orEmpty()
             // Try array form first
-            runCatching {
-                Net.json.decodeFromString(ListSerializer(CloudStreamPlugin.serializer()), body)
-            }.getOrElse {
-                // Some repos wrap inside a "pluginLists" or root object — try a fallback shape
-                runCatching {
-                    val element = Net.json.parseToJsonElement(body)
-                    val arr = when {
-                        element is kotlinx.serialization.json.JsonArray -> element
-                        element is kotlinx.serialization.json.JsonObject &&
-                            element["pluginLists"] is kotlinx.serialization.json.JsonArray ->
-                            element["pluginLists"] as kotlinx.serialization.json.JsonArray
-                        else -> return@runCatching emptyList()
-                    }
-                    arr.map {
+            val array = runCatching {
+                Net.json.parseToJsonElement(body) as? JsonArray
+            }.getOrNull()
+            if (array != null) {
+                return array.mapNotNull {
+                    runCatching {
                         Net.json.decodeFromJsonElement(CloudStreamPlugin.serializer(), it)
-                    }
-                }.getOrDefault(emptyList())
+                    }.getOrNull()
+                }
             }
+            // Then object with `pluginLists` field
+            val obj = runCatching {
+                Net.json.parseToJsonElement(body) as? JsonObject
+            }.getOrNull()
+            if (obj != null) {
+                val plugins = obj["pluginLists"] as? JsonArray
+                if (plugins != null) {
+                    return plugins.mapNotNull {
+                        runCatching {
+                            Net.json.decodeFromJsonElement(CloudStreamPlugin.serializer(), it)
+                        }.getOrNull()
+                    }
+                }
+            }
+            return emptyList()
         }
     }
 
     suspend fun installPlugin(repo: CloudStreamRepo, plugin: CloudStreamPlugin): InstalledPlugin =
         withContext(Dispatchers.IO) {
+            if (plugin.downloadUrl.isBlank()) error("Plugin has no download URL")
             val safeName = (plugin.internalName ?: plugin.name)
                 .replace(Regex("[^A-Za-z0-9._-]"), "_")
                 .ifBlank { "plugin_${System.currentTimeMillis()}" }
             val outFile = File(pluginsDir, "$safeName.cs3")
-            val req = Request.Builder().url(plugin.url).build()
+            val req = Request.Builder().url(plugin.downloadUrl).build()
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) error("Download failed HTTP ${resp.code}")
                 val body = resp.body ?: error("Empty body")
@@ -125,7 +179,7 @@ class PluginRepository(private val context: Context) {
                 version = plugin.version,
                 filePath = outFile.absolutePath,
                 sourceRepoId = repo.id,
-                sourceUrl = plugin.url,
+                sourceUrl = plugin.downloadUrl,
                 installedAt = System.currentTimeMillis(),
             )
             val list = installed.let { i ->
@@ -142,5 +196,17 @@ class PluginRepository(private val context: Context) {
             File(it.filePath).delete()
         }
         saveInstalled(current.filterNot { it.internalName == internalName })
+    }
+
+    /** Total bytes used by installed plugin files. */
+    suspend fun pluginsCacheSize(): Long = withContext(Dispatchers.IO) {
+        pluginsDir.listFiles()?.sumOf { it.length() } ?: 0L
+    }
+
+    /** Internal cache + plugin files. */
+    suspend fun clearAppCache(): Long = withContext(Dispatchers.IO) {
+        val before = (context.cacheDir.walkBottomUp().sumOf { it.length() })
+        context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+        before
     }
 }

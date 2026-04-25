@@ -19,8 +19,10 @@ android {
         applicationId = "com.aioweb.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // Use CI run number as versionCode so each successive build is treated as an update.
+        // Falls back to 1 for local builds.
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
+        versionName = "1.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
 
         // Backend base URL (override in Settings screen at runtime via DataStore)
         buildConfigField(
@@ -61,6 +63,12 @@ android {
             isDebuggable = true
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            // Use the release keystore for debug too when available, so successive CI debug builds
+            // can update each other on the device (otherwise random debug.keystore per CI run breaks updates).
+            val rel = signingConfigs.findByName("release")
+            if (rel != null && rel.storeFile != null) {
+                signingConfig = rel
+            }
         }
     }
     compileOptions {

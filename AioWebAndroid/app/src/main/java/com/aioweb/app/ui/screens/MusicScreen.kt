@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -12,11 +14,18 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,7 +37,11 @@ import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.aioweb.app.data.newpipe.YtTrack
 import com.aioweb.app.ui.viewmodel.MusicViewModel
-import androidx.compose.ui.platform.LocalContext
+
+private val SUGGESTIONS = listOf(
+    "Top hits 2026", "Lo-fi beats", "Chill", "Workout",
+    "Throwback", "K-pop", "Hip hop", "Jazz", "EDM", "Acoustic"
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,152 +51,332 @@ fun MusicScreen() {
     val state by vm.state.collectAsState()
     var query by remember { mutableStateOf("") }
 
-    // ExoPlayer lifecycle
     val player = remember {
-        ExoPlayer.Builder(context).build().apply {
-            playWhenReady = true
-        }
+        ExoPlayer.Builder(context).build().apply { playWhenReady = true }
     }
     var isPlaying by remember { mutableStateOf(false) }
     DisposableEffect(player) {
-        val listener = object : Player.Listener {
+        val l = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
         }
-        player.addListener(listener)
-        onDispose {
-            player.removeListener(listener)
-            player.release()
-        }
+        player.addListener(l)
+        onDispose { player.removeListener(l); player.release() }
     }
 
-    Column(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-    ) {
-        Spacer(Modifier.height(12.dp))
-        Text(
-            "Music",
-            style = MaterialTheme.typography.displayLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(horizontal = 20.dp)
-        )
-        Text(
-            "From YouTube · audio-only",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 20.dp)
-        )
-        Spacer(Modifier.height(16.dp))
+    val nowPlaying = state.tracks.firstOrNull { it.url == state.nowPlayingUrl }
 
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-            placeholder = { Text("Search songs, artists…") },
-            singleLine = true,
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            trailingIcon = {
-                if (state.loading) CircularProgressIndicator(
-                    Modifier.size(20.dp), strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = if (nowPlaying != null) 96.dp else 12.dp),
+        ) {
+            item { MusicHeader() }
+            item {
+                MusicSearchField(
+                    query = query,
+                    loading = state.loading,
+                    onQueryChange = { query = it },
                 )
-            },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            shape = RoundedCornerShape(14.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-            )
-        )
-        LaunchedEffect(query) {
-            if (query.length >= 2) {
-                kotlinx.coroutines.delay(400)
-                vm.search(query)
+                LaunchedEffect(query) {
+                    if (query.length >= 2) {
+                        kotlinx.coroutines.delay(400)
+                        vm.search(query)
+                    }
+                }
             }
-        }
 
-        Spacer(Modifier.height(8.dp))
-        state.error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(20.dp))
-        }
-
-        LazyColumn(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            items(state.tracks, key = { it.url }) { track ->
-                TrackRow(
-                    track = track,
-                    nowPlayingUrl = state.nowPlayingUrl,
-                    isPlaying = isPlaying && state.nowPlayingUrl == track.url,
-                    loading = state.resolvingUrl == track.url,
-                    onClick = {
-                        vm.play(track) { audioUrl ->
-                            player.setMediaItem(
-                                MediaItem.Builder()
-                                    .setUri(audioUrl)
-                                    .setMediaMetadata(
-                                        MediaMetadata.Builder()
-                                            .setTitle(track.title)
-                                            .setArtist(track.uploader)
-                                            .setArtworkUri(android.net.Uri.parse(track.thumbnail ?: ""))
-                                            .build()
-                                    ).build()
-                            )
-                            player.prepare()
-                            player.play()
+            // Discovery chips when no query
+            if (query.isBlank() && state.tracks.isEmpty()) {
+                item { SuggestionsRow(onPick = { query = it; vm.search(it) }) }
+                item {
+                    Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            Modifier.size(96.dp).clip(CircleShape).background(
+                                Brush.linearGradient(
+                                    listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
+                                )
+                            ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(40.dp))
                         }
-                    },
-                    onPause = { player.pause() }
-                )
+                        Spacer(Modifier.height(16.dp))
+                        Text("Tap a vibe or search", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onBackground)
+                        Text("Stream from YouTube · audio only", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            // Top results — Hero cards (first 6 tracks)
+            if (state.tracks.isNotEmpty()) {
+                item {
+                    SectionTitle("Top results")
+                }
+                item {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(state.tracks.take(6), key = { "hero_${it.url}" }) { track ->
+                            HeroCard(
+                                track = track,
+                                isPlaying = isPlaying && state.nowPlayingUrl == track.url,
+                                onClick = {
+                                    if (state.nowPlayingUrl == track.url && player.isPlaying) {
+                                        player.pause()
+                                    } else if (state.nowPlayingUrl == track.url) {
+                                        player.play()
+                                    } else {
+                                        vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+                item { SectionTitle("All songs") }
+                items(state.tracks.drop(6), key = { it.url }) { track ->
+                    SongRow(
+                        track = track,
+                        nowPlayingUrl = state.nowPlayingUrl,
+                        isPlaying = isPlaying && state.nowPlayingUrl == track.url,
+                        loading = state.resolvingUrl == track.url,
+                        onClick = {
+                            if (state.nowPlayingUrl == track.url && player.isPlaying) {
+                                player.pause()
+                            } else if (state.nowPlayingUrl == track.url) {
+                                player.play()
+                            } else {
+                                vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                            }
+                        }
+                    )
+                }
+            }
+            state.error?.let {
+                item {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(20.dp),
+                    )
+                }
             }
         }
 
         // Mini player bar
-        if (state.nowPlayingUrl != null) {
-            val track = state.tracks.firstOrNull { it.url == state.nowPlayingUrl }
-            track?.let {
-                MiniPlayer(
-                    track = it,
-                    isPlaying = isPlaying,
-                    onToggle = { if (player.isPlaying) player.pause() else player.play() }
-                )
+        nowPlaying?.let { track ->
+            MiniPlayer(
+                track = track,
+                isPlaying = isPlaying,
+                onToggle = { if (player.isPlaying) player.pause() else player.play() },
+                onSkipNext = {
+                    val idx = state.tracks.indexOfFirst { it.url == track.url }
+                    state.tracks.getOrNull(idx + 1)?.let { next ->
+                        vm.play(next) { audioUrl -> playTrack(player, next, audioUrl) }
+                    }
+                },
+                onSkipPrev = {
+                    val idx = state.tracks.indexOfFirst { it.url == track.url }
+                    state.tracks.getOrNull(idx - 1)?.let { prev ->
+                        vm.play(prev) { audioUrl -> playTrack(player, prev, audioUrl) }
+                    }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+    }
+}
+
+private fun playTrack(player: ExoPlayer, track: YtTrack, audioUrl: String) {
+    player.setMediaItem(
+        MediaItem.Builder()
+            .setUri(audioUrl)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.uploader)
+                    .setArtworkUri(track.thumbnail?.let { android.net.Uri.parse(it) })
+                    .build()
+            )
+            .build()
+    )
+    player.prepare()
+    player.play()
+}
+
+@Composable
+private fun MusicHeader() {
+    Column(Modifier.padding(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 8.dp)) {
+        Text(
+            "Listen now",
+            style = MaterialTheme.typography.displayLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontWeight = FontWeight.Black,
+        )
+        Text(
+            "Your music. From everywhere.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MusicSearchField(query: String, loading: Boolean, onQueryChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        placeholder = { Text("Search songs, artists, albums") },
+        singleLine = true,
+        leadingIcon = { Icon(Icons.Default.Search, null) },
+        trailingIcon = {
+            if (loading) CircularProgressIndicator(
+                Modifier.size(20.dp), strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary
+            )
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        shape = RoundedCornerShape(28.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+            focusedContainerColor = MaterialTheme.colorScheme.surface,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+        )
+    )
+}
+
+@Composable
+private fun SuggestionsRow(onPick: (String) -> Unit) {
+    Column {
+        SectionTitle("Trending searches")
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(SUGGESTIONS) { s ->
+                SuggestionChip(label = s, onClick = { onPick(s) })
             }
         }
     }
 }
 
 @Composable
-private fun TrackRow(
+private fun SuggestionChip(label: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.onBackground,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+    )
+}
+
+@Composable
+private fun HeroCard(track: YtTrack, isPlaying: Boolean, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .width(160.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            Modifier
+                .size(160.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            AsyncImage(
+                model = track.thumbnail,
+                contentDescription = track.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            // Play overlay
+            Box(
+                Modifier
+                    .padding(8.dp)
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .align(Alignment.BottomEnd),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            track.title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            track.uploader,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun SongRow(
     track: YtTrack,
     nowPlayingUrl: String?,
     isPlaying: Boolean,
     loading: Boolean,
     onClick: () -> Unit,
-    onPause: () -> Unit,
 ) {
     val highlighted = nowPlayingUrl == track.url
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (highlighted) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent
-            )
-            .clickable {
-                if (isPlaying) onPause() else onClick()
-            }
-            .padding(8.dp)
+            .background(if (highlighted) MaterialTheme.colorScheme.surface else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
     ) {
         Box(
             Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .size(56.dp)
+                .clip(RoundedCornerShape(10.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
             if (track.thumbnail != null) {
-                AsyncImage(model = track.thumbnail, contentDescription = null)
+                AsyncImage(
+                    model = track.thumbnail,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
             } else {
                 Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -191,14 +384,18 @@ private fun TrackRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                track.title, style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                track.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
-                track.uploader, style = MaterialTheme.typography.bodyMedium,
+                track.uploader,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         if (loading) {
@@ -214,32 +411,62 @@ private fun TrackRow(
 }
 
 @Composable
-private fun MiniPlayer(track: YtTrack, isPlaying: Boolean, onToggle: () -> Unit) {
+private fun MiniPlayer(
+    track: YtTrack,
+    isPlaying: Boolean,
+    onToggle: () -> Unit,
+    onSkipNext: () -> Unit,
+    onSkipPrev: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
     ) {
-        AsyncImage(
-            model = track.thumbnail, contentDescription = null,
-            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(6.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        )
+        Box(
+            Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            AsyncImage(
+                model = track.thumbnail,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(track.title, color = MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(track.uploader, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                track.title, color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                track.uploader, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = onSkipPrev) {
+            Icon(Icons.Default.SkipPrevious, "Previous", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onClick = onToggle) {
             Icon(
                 if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = if (isPlaying) "Pause" else "Play",
+                if (isPlaying) "Pause" else "Play",
                 tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(32.dp),
             )
+        }
+        IconButton(onClick = onSkipNext) {
+            Icon(Icons.Default.SkipNext, "Next", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
