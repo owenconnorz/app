@@ -155,7 +155,7 @@ dependencies {
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     // NewPipe Extractor (YouTube music/videos without API keys)
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.2")
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.5")
     implementation("org.jsoup:jsoup:1.17.2")
 
     // WorkManager (download queue)

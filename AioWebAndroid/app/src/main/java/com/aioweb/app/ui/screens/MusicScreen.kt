@@ -88,21 +88,66 @@ fun MusicScreen() {
             // Discovery chips when no query
             if (query.isBlank() && state.tracks.isEmpty()) {
                 item { SuggestionsRow(onPick = { query = it; vm.search(it) }) }
-                item {
-                    Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            Modifier.size(96.dp).clip(CircleShape).background(
-                                Brush.linearGradient(
-                                    listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
-                                )
-                            ),
-                            contentAlignment = Alignment.Center
+
+                // Home feed (Trending music) — appears as soon as NewPipe returns it
+                if (state.homeFeed.isNotEmpty()) {
+                    item { SectionTitle("Trending today") }
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(40.dp))
+                            items(state.homeFeed.take(10), key = { "home_${it.url}" }) { track ->
+                                HeroCard(
+                                    track = track,
+                                    isPlaying = isPlaying && state.nowPlayingUrl == track.url,
+                                    onClick = {
+                                        if (state.nowPlayingUrl == track.url && player.isPlaying) player.pause()
+                                        else if (state.nowPlayingUrl == track.url) player.play()
+                                        else vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                    }
+                                )
+                            }
                         }
-                        Spacer(Modifier.height(16.dp))
-                        Text("Tap a vibe or search", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onBackground)
-                        Text("Stream from YouTube · audio only", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    item { SectionTitle("More from YouTube") }
+                    items(state.homeFeed.drop(10), key = { "homerow_${it.url}" }) { track ->
+                        SongRow(
+                            track = track,
+                            nowPlayingUrl = state.nowPlayingUrl,
+                            isPlaying = isPlaying && state.nowPlayingUrl == track.url,
+                            loading = state.resolvingUrl == track.url,
+                            onClick = {
+                                if (state.nowPlayingUrl == track.url && player.isPlaying) player.pause()
+                                else if (state.nowPlayingUrl == track.url) player.play()
+                                else vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                            }
+                        )
+                    }
+                } else if (state.homeLoading) {
+                    item {
+                        Box(
+                            Modifier.fillMaxWidth().padding(40.dp),
+                            contentAlignment = Alignment.Center,
+                        ) { CircularProgressIndicator() }
+                    }
+                } else {
+                    item {
+                        Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(
+                                Modifier.size(96.dp).clip(CircleShape).background(
+                                    Brush.linearGradient(
+                                        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
+                                    )
+                                ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(40.dp))
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            Text("Tap a vibe or search", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onBackground)
+                            Text("Stream from YouTube · audio only", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }

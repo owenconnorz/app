@@ -14,7 +14,9 @@ import kotlinx.coroutines.launch
 
 data class MusicState(
     val tracks: List<YtTrack> = emptyList(),
+    val homeFeed: List<YtTrack> = emptyList(),
     val loading: Boolean = false,
+    val homeLoading: Boolean = false,
     val error: String? = null,
     val nowPlayingUrl: String? = null,
     val resolvingUrl: String? = null,
@@ -23,6 +25,21 @@ data class MusicState(
 class MusicViewModel : ViewModel() {
     private val _state = MutableStateFlow(MusicState())
     val state: StateFlow<MusicState> = _state.asStateFlow()
+
+    init { loadHomeFeed() }
+
+    fun loadHomeFeed() {
+        viewModelScope.launch {
+            _state.update { it.copy(homeLoading = true) }
+            try {
+                val feed = NewPipeRepository.homeFeed()
+                _state.update { it.copy(homeFeed = feed, homeLoading = false) }
+            } catch (e: Exception) {
+                // Home feed failure is non-fatal — search still works.
+                _state.update { it.copy(homeLoading = false) }
+            }
+        }
+    }
 
     fun search(query: String) {
         viewModelScope.launch {
@@ -41,14 +58,15 @@ class MusicViewModel : ViewModel() {
             _state.update { it.copy(resolvingUrl = track.url, error = null) }
             try {
                 val audio = NewPipeRepository.resolveAudioStream(track.url)
-                if (audio != null) {
-                    _state.update { it.copy(nowPlayingUrl = track.url, resolvingUrl = null) }
-                    onResolved(audio)
-                } else {
-                    _state.update { it.copy(resolvingUrl = null, error = "Could not resolve audio stream") }
-                }
+                _state.update { it.copy(nowPlayingUrl = track.url, resolvingUrl = null) }
+                onResolved(audio)
             } catch (e: Exception) {
-                _state.update { it.copy(resolvingUrl = null, error = "Playback failed: ${e.message}") }
+                _state.update {
+                    it.copy(
+                        resolvingUrl = null,
+                        error = "Playback failed: ${e.message ?: e::class.simpleName}",
+                    )
+                }
             }
         }
     }
