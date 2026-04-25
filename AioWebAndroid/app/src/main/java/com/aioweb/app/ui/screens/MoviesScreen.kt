@@ -77,16 +77,79 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                 }
             }
 
+            // Plugin error/loading banner
+            if (state.pluginLoading) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().padding(20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            "Loading ${state.selectedSourceName} home feed…",
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            }
+            state.pluginError?.let { err ->
+                item {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.errorContainer)
+                            .padding(16.dp),
+                    ) {
+                        Text(
+                            "Plugin error",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            err,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
+
             if (query.isNotBlank()) {
                 item { SectionTitle("Search results") }
-                item {
-                    PosterGrid(
-                        movies = state.searchResults,
-                        onClick = onMovieClick,
-                    )
+                if (state.isPluginActive) {
+                    item {
+                        PluginPosterGrid(state.pluginSearchResults) { /* TODO link to plugin detail */ }
+                    }
+                } else {
+                    item {
+                        PosterGrid(
+                            movies = state.searchResults,
+                            onClick = onMovieClick,
+                        )
+                    }
+                }
+            } else if (state.isPluginActive) {
+                // ── Plugin home feed sections ────────────────────────────
+                state.pluginSections.forEachIndexed { idx, section ->
+                    item(key = "psec_t_$idx") { SectionTitle(section.title) }
+                    item(key = "psec_$idx") {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            items(section.items, key = { "ps_${idx}_${it.url}" }) { sr ->
+                                PluginPoster(sr, onClick = { /* TODO link to plugin detail */ })
+                            }
+                        }
+                    }
                 }
             } else {
                 val srcLabel = state.selectedSourceName
+                if (state.trending.isNotEmpty()) {
                 if (state.trending.isNotEmpty()) {
                     item { SectionTitle("$srcLabel · Trending this week") }
                     item {
@@ -348,6 +411,85 @@ private fun MidPoster(m: TmdbMovie, onClick: () -> Unit) {
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+@Composable
+private fun PluginPoster(sr: com.lagradost.cloudstream3.SearchResponse, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .width(140.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = sr.posterUrl,
+            contentDescription = sr.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth().aspectRatio(2f / 3f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surface),
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            sr.name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun PluginPosterGrid(
+    items: List<com.lagradost.cloudstream3.SearchResponse>,
+    onClick: (com.lagradost.cloudstream3.SearchResponse) -> Unit,
+) {
+    if (items.isEmpty()) {
+        Text(
+            "No results from this plugin.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(20.dp),
+        )
+        return
+    }
+    Column(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { sr ->
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onClick(sr) }
+                    ) {
+                        AsyncImage(
+                            model = sr.posterUrl,
+                            contentDescription = sr.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth().aspectRatio(2f / 3f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surface),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            sr.name,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
 }
 
