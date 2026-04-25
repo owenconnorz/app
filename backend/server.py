@@ -131,66 +131,124 @@ async def ai_image(req: ImageRequest):
         raise HTTPException(500, f"AI image gen failed: {e}")
 
 
-# ------- AI: NSFW image generation via fal.ai -------
-# The Emergent Universal Key (Nano Banana / GPT-Image-1) blocks NSFW prompts.
-# fal.ai exposes uncensored SDXL/RealVis models. Users supply their own fal.ai
-# API key on-device (Settings → fal.ai key) — we just proxy the request so the
-# key never leaves their network in plaintext.
-class NsfwImageRequest(BaseModel):
+# ------- AI: NSFW image generation + image editing via HuggingFace Inference API -------
+# Uses the user's own HuggingFace token (free at huggingface.co/settings/tokens).
+# Default models:
+#   Text-to-image: stabilityai/stable-diffusion-xl-base-1.0 (no built-in safety filter)
+#   Image-to-image / edit: timbrooks/instruct-pix2pix (text-instruction image editor)
+HF_BASE = "https://api-inference.huggingface.co/models"
+
+
+class HfImageRequest(BaseModel):
     prompt: str
-    fal_key: str
-    model: str = "fal-ai/fast-sdxl"  # standard SDXL via fal.ai; supports enable_safety_checker=false
-    image_size: str = "square_hd"
-    num_inference_steps: int = 28
+    hf_token: str
+    model: str = "stabilityai/stable-diffusion-xl-base-1.0"
     negative_prompt: Optional[str] = "blurry, low quality, distorted, watermark"
 
 
-@api_router.post("/ai/image_nsfw", response_model=ImageResponse)
-async def ai_image_nsfw(req: NsfwImageRequest):
-    if not req.fal_key.strip():
-        raise HTTPException(400, "fal.ai API key required. Get one free at fal.ai/dashboard then add it in Settings.")
-    payload = {
-        "prompt": req.prompt,
-        "image_size": req.image_size,
-        "num_inference_steps": req.num_inference_steps,
-        "enable_safety_checker": False,
-    }
-    if req.negative_prompt:
-        payload["negative_prompt"] = req.negative_prompt
+class HfImageEditRequest(BaseModel):
+    prompt: str
+    hf_token: str
+    image_base64: str  # original image, base64-encoded (data: prefix optional)
+    model: str = "timbrooks/instruct-pix2pix"
+
+
+def _ensure_hf_token(token: str):
+    if not token.strip():
+        raise HTTPException(
+            400,
+            "HuggingFace token required. Get a free token at huggingface.co/settings/tokens "
+            "and paste it in Settings → HuggingFace token.",
+        )
+
+
+@api_router.post("/ai/image_hf", response_model=ImageResponse)
+async def ai_image_hf(req: HfImageRequest):
+    """Text-to-image via HuggingFace Inference API."""
+    _ensure_hf_token(req.hf_token)
     try:
-        async with httpx.AsyncClient(timeout=120) as cx:
+        async with httpx.AsyncClient(timeout=180) as cx:
             r = await cx.post(
-                f"https://fal.run/{req.model}",
+                f"{HF_BASE}/{req.model}",
                 headers={
-                    "Authorization": f"Key {req.fal_key.strip()}",
+                    "Authorization": f"Bearer {req.hf_token.strip()}",
+                    "Accept": "image/png",
                     "Content-Type": "application/json",
                 },
-                json=payload,
+                json={
+                    "inputs": req.prompt,
+                    "parameters": {
+                        "negative_prompt": req.negative_prompt,
+                    },
+                    # `wait_for_model=True` makes the request block while the model warms up
+                    # instead of returning an immediate 503 — much friendlier UX on a cold cache.
+                    "options": {"wait_for_model": True},
+                },
             )
             if r.status_code != 200:
-                raise HTTPException(r.status_code, f"fal.ai returned HTTP {r.status_code}: {r.text[:300]}")
-            data = r.json()
-            urls = [img.get("url") for img in data.get("images", []) if img.get("url")]
-            if not urls:
-                raise HTTPException(500, "fal.ai response had no images")
-            # Download each image and return as base64 (keeps the client interface identical
-            # to /api/ai/image — the Compose ImageBitmap decoder is already wired for this).
-            b64_list: List[str] = []
-            for u in urls:
-                ir = await cx.get(u)
-                if ir.status_code == 200:
-                    b64_list.append(base64.b64encode(ir.content).decode("ascii"))
-            mime = "image/png"
+                raise HTTPException(r.status_code, f"HuggingFace HTTP {r.status_code}: {r.text[:300]}")
+            content = r.content
+            # If HF returns JSON (some models), it's an error envelope.
+            if r.headers.get("content-type", "").startswith("application/json"):
+                raise HTTPException(500, f"HuggingFace returned JSON instead of image: {r.text[:300]}")
             return ImageResponse(
-                text=f"Generated via {req.model} on fal.ai",
-                images=b64_list,
-                mime_type=mime,
+                text=f"Generated via {req.model} on HuggingFace",
+                images=[base64.b64encode(content).decode("ascii")],
+                mime_type=r.headers.get("content-type", "image/png"),
             )
     except HTTPException:
         raise
     except Exception as e:
-        logging.exception("ai_image_nsfw failed")
-        raise HTTPException(500, f"NSFW image gen failed: {e}")
+        logging.exception("ai_image_hf failed")
+        raise HTTPException(500, f"HF image gen failed: {e}")
+
+
+@api_router.post("/ai/image_hf_edit", response_model=ImageResponse)
+async def ai_image_hf_edit(req: HfImageEditRequest):
+    """Image-to-image edit via HuggingFace (default: instruct-pix2pix)."""
+    _ensure_hf_token(req.hf_token)
+    # Strip data URI prefix if present.
+    raw = req.image_base64.strip()
+    if raw.startswith("data:"):
+        raw = raw.split(",", 1)[-1]
+    try:
+        image_bytes = base64.b64decode(raw)
+    except Exception as e:
+        raise HTTPException(400, f"image_base64 is not valid base64: {e}")
+    try:
+        async with httpx.AsyncClient(timeout=240) as cx:
+            r = await cx.post(
+                f"{HF_BASE}/{req.model}",
+                headers={
+                    "Authorization": f"Bearer {req.hf_token.strip()}",
+                    "Accept": "image/png",
+                    # NOTE: HF accepts raw image bytes for image-to-image with the prompt
+                    # passed via the `x-wait-for-model` / `x-prompt`-style headers OR via a
+                    # multipart JSON envelope. The cleanest cross-model path is the JSON envelope:
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "inputs": {
+                        "image": base64.b64encode(image_bytes).decode("ascii"),
+                        "prompt": req.prompt,
+                    },
+                    "options": {"wait_for_model": True},
+                },
+            )
+            if r.status_code != 200:
+                raise HTTPException(r.status_code, f"HuggingFace HTTP {r.status_code}: {r.text[:400]}")
+            if r.headers.get("content-type", "").startswith("application/json"):
+                raise HTTPException(500, f"HuggingFace returned JSON instead of image: {r.text[:400]}")
+            return ImageResponse(
+                text=f"Edited via {req.model} on HuggingFace",
+                images=[base64.b64encode(r.content).decode("ascii")],
+                mime_type=r.headers.get("content-type", "image/png"),
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception("ai_image_hf_edit failed")
+        raise HTTPException(500, f"HF image edit failed: {e}")
 
 
 # ------- TMDB proxy (keeps API key off-device, optional) -------

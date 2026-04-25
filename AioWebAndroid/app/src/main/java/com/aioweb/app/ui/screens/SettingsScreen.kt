@@ -79,7 +79,7 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
         autoplay = sl.settings.autoplayNext.first()
         subs = sl.settings.subtitlesEnabled.first()
         dlWifi = sl.settings.downloadOverWifiOnly.first()
-        falKey = sl.settings.falApiKey.first()
+        falKey = sl.settings.hfToken.first()
         pluginsCacheBytes = pluginRepo.pluginsCacheSize()
     }
 
@@ -179,8 +179,8 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
                 value = falKey,
                 onValueChange = { falKey = it; saved = false },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("fal.ai API key (optional, for NSFW image gen)") },
-                supportingText = { Text("Get a free key at fal.ai/dashboard. Stored on-device only.") },
+                label = { Text("HuggingFace token (NSFW image gen + image editing)") },
+                supportingText = { Text("Free at huggingface.co/settings/tokens. Stored on-device only.") },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -270,7 +270,7 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
                     sl.settings.setBackendUrl(url.trim().trimEnd('/'))
                     sl.settings.setAiProvider(provider)
                     sl.settings.setAiModel(model)
-                    sl.settings.setFalApiKey(falKey.trim())
+                    sl.settings.setHfToken(falKey.trim())
                     saved = true
                 }
             },
@@ -279,7 +279,7 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
         ) {
             Icon(if (saved) Icons.Default.Check else Icons.Default.Cloud, null)
             Spacer(Modifier.width(8.dp))
-            Text(if (saved) "Saved" else "Save backend, AI defaults & fal.ai key")
+            Text(if (saved) "Saved" else "Save backend, AI defaults & HF token")
         }
         Spacer(Modifier.height(40.dp))
     }

@@ -6,8 +6,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.aioweb.app.data.ServiceLocator
 import com.aioweb.app.data.api.ChatRequest
+import com.aioweb.app.data.api.HfImageEditRequest
+import com.aioweb.app.data.api.HfImageRequest
 import com.aioweb.app.data.api.ImageRequest
-import com.aioweb.app.data.api.NsfwImageRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +29,13 @@ data class AiState(
     val imageError: String? = null,
     val generatedImageBase64: String? = null,
     val nsfwMode: Boolean = false,
+
+    // Image editing (image-to-image)
+    val sourceImageBase64: String? = null,
+    val editPrompt: String = "",
+    val editLoading: Boolean = false,
+    val editError: String? = null,
+    val editedImageBase64: String? = null,
 )
 
 class AiViewModel(private val sl: ServiceLocator) : ViewModel() {
@@ -78,17 +86,17 @@ class AiViewModel(private val sl: ServiceLocator) : ViewModel() {
         viewModelScope.launch {
             try {
                 val resp = if (_state.value.nsfwMode) {
-                    val falKey = sl.settings.falApiKey.first()
-                    if (falKey.isBlank()) {
+                    val token = sl.settings.hfToken.first()
+                    if (token.isBlank()) {
                         _state.update {
                             it.copy(
                                 imageLoading = false,
-                                imageError = "NSFW mode requires a fal.ai API key. Add it in Settings → fal.ai key (free at fal.ai/dashboard).",
+                                imageError = "NSFW mode requires a HuggingFace token. Add it in Settings → HuggingFace token (free at huggingface.co/settings/tokens).",
                             )
                         }
                         return@launch
                     }
-                    sl.backend().imageNsfw(NsfwImageRequest(prompt = prompt, falKey = falKey))
+                    sl.backend().imageHf(HfImageRequest(prompt = prompt, hfToken = token))
                 } else {
                     sl.backend().image(ImageRequest(prompt = prompt))
                 }
@@ -102,6 +110,53 @@ class AiViewModel(private val sl: ServiceLocator) : ViewModel() {
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(imageLoading = false, imageError = "Image gen failed: ${e.message}") }
+            }
+        }
+    }
+
+    // ---- Image-to-image editing ----------------------------------------------------------------
+
+    fun setSourceImage(base64: String?) {
+        _state.update { it.copy(sourceImageBase64 = base64, editError = null, editedImageBase64 = null) }
+    }
+
+    fun setEditPrompt(p: String) {
+        _state.update { it.copy(editPrompt = p) }
+    }
+
+    fun editImage() {
+        val img = _state.value.sourceImageBase64
+        val prompt = _state.value.editPrompt
+        if (img.isNullOrBlank() || prompt.isBlank()) {
+            _state.update { it.copy(editError = "Pick an image and describe how to edit it.") }
+            return
+        }
+        _state.update { it.copy(editLoading = true, editError = null, editedImageBase64 = null) }
+        viewModelScope.launch {
+            try {
+                val token = sl.settings.hfToken.first()
+                if (token.isBlank()) {
+                    _state.update {
+                        it.copy(
+                            editLoading = false,
+                            editError = "Image editing requires a HuggingFace token. Add it in Settings → HuggingFace token.",
+                        )
+                    }
+                    return@launch
+                }
+                val resp = sl.backend().imageHfEdit(
+                    HfImageEditRequest(prompt = prompt, hfToken = token, imageBase64 = img),
+                )
+                val first = resp.images.firstOrNull()
+                _state.update {
+                    it.copy(
+                        editLoading = false,
+                        editedImageBase64 = first,
+                        editError = if (first == null) "No image returned" else null,
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(editLoading = false, editError = "Edit failed: ${e.message}") }
             }
         }
     }

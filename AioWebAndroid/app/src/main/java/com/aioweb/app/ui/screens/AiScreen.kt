@@ -28,7 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.Image as ComposeImage
 import com.aioweb.app.ui.viewmodel.AiViewModel
 
-private enum class AiTab(val label: String) { Chat("Chat"), Image("Image gen") }
+private enum class AiTab(val label: String) { Chat("Chat"), Image("Image gen"), Edit("Image edit") }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -157,7 +157,7 @@ fun AiScreen() {
                             )
                             Text(
                                 if (state.nsfwMode)
-                                    "Routed to fal.ai · uses your fal.ai API key (Settings)"
+                                    "Routed to HuggingFace · uses your HF token (Settings)"
                                 else
                                     "Off — uses Nano Banana with safety filters",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -181,7 +181,7 @@ fun AiScreen() {
                             Icon(Icons.Default.AutoAwesome, null)
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                if (state.nsfwMode) "Generate with fal.ai (uncensored)"
+                                if (state.nsfwMode) "Generate with HuggingFace (uncensored)"
                                 else "Generate with Nano Banana"
                             )
                         }

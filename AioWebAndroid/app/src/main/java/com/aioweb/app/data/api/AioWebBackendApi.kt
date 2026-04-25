@@ -28,14 +28,20 @@ data class ImageRequest(
 )
 
 @Serializable
-data class NsfwImageRequest(
+data class HfImageRequest(
     val prompt: String,
-    @SerialName("fal_key") val falKey: String,
-    val model: String = "fal-ai/fast-sdxl",
-    @SerialName("image_size") val imageSize: String = "square_hd",
-    @SerialName("num_inference_steps") val numInferenceSteps: Int = 28,
+    @SerialName("hf_token") val hfToken: String,
+    val model: String = "stabilityai/stable-diffusion-xl-base-1.0",
     @SerialName("negative_prompt") val negativePrompt: String? =
         "blurry, low quality, distorted, watermark",
+)
+
+@Serializable
+data class HfImageEditRequest(
+    val prompt: String,
+    @SerialName("hf_token") val hfToken: String,
+    @SerialName("image_base64") val imageBase64: String,
+    val model: String = "timbrooks/instruct-pix2pix",
 )
 
 @Serializable
@@ -52,6 +58,9 @@ interface AioWebBackendApi {
     @POST("api/ai/image")
     suspend fun image(@Body req: ImageRequest): ImageResponse
 
-    @POST("api/ai/image_nsfw")
-    suspend fun imageNsfw(@Body req: NsfwImageRequest): ImageResponse
+    @POST("api/ai/image_hf")
+    suspend fun imageHf(@Body req: HfImageRequest): ImageResponse
+
+    @POST("api/ai/image_hf_edit")
+    suspend fun imageHfEdit(@Body req: HfImageEditRequest): ImageResponse
 }

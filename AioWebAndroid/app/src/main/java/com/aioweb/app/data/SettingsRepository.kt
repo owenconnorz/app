@@ -24,7 +24,7 @@ object SettingsKeys {
     val DOWNLOAD_OVER_WIFI_ONLY = booleanPreferencesKey("dl_wifi_only")
     val SAFE_MODE_PIN = stringPreferencesKey("safe_mode_pin")     // 4-digit PIN for NSFW
     val THEME = stringPreferencesKey("theme")                     // dark / system
-    val FAL_API_KEY = stringPreferencesKey("fal_api_key")         // user-supplied fal.ai key for NSFW image gen
+    val HF_TOKEN = stringPreferencesKey("hf_token")               // HuggingFace token for NSFW + image edit
 }
 
 class SettingsRepository(private val context: Context) {
@@ -42,7 +42,8 @@ class SettingsRepository(private val context: Context) {
     val downloadOverWifiOnly: Flow<Boolean> = context.dataStore.data.map { it[SettingsKeys.DOWNLOAD_OVER_WIFI_ONLY] ?: true }
     val safeModePin: Flow<String> = context.dataStore.data.map { it[SettingsKeys.SAFE_MODE_PIN] ?: "" }
     val theme: Flow<String> = context.dataStore.data.map { it[SettingsKeys.THEME] ?: "dark" }
-    val falApiKey: Flow<String> = context.dataStore.data.map { it[SettingsKeys.FAL_API_KEY] ?: "" }
+    val falApiKey: Flow<String> = context.dataStore.data.map { it[SettingsKeys.HF_TOKEN] ?: "" }
+    val hfToken: Flow<String> = context.dataStore.data.map { it[SettingsKeys.HF_TOKEN] ?: "" }
 
     suspend fun setBackendUrl(url: String) = context.dataStore.edit { it[SettingsKeys.BACKEND_URL] = url }
     suspend fun setAiProvider(p: String) = context.dataStore.edit { it[SettingsKeys.AI_PROVIDER] = p }
@@ -56,5 +57,6 @@ class SettingsRepository(private val context: Context) {
     suspend fun setDownloadOverWifiOnly(b: Boolean) = context.dataStore.edit { it[SettingsKeys.DOWNLOAD_OVER_WIFI_ONLY] = b }
     suspend fun setSafeModePin(p: String) = context.dataStore.edit { it[SettingsKeys.SAFE_MODE_PIN] = p }
     suspend fun setTheme(t: String) = context.dataStore.edit { it[SettingsKeys.THEME] = t }
-    suspend fun setFalApiKey(k: String) = context.dataStore.edit { it[SettingsKeys.FAL_API_KEY] = k }
+    suspend fun setFalApiKey(k: String) = context.dataStore.edit { it[SettingsKeys.HF_TOKEN] = k }
+    suspend fun setHfToken(k: String) = context.dataStore.edit { it[SettingsKeys.HF_TOKEN] = k }
 }
