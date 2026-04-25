@@ -1,11 +1,20 @@
-name: Build APK (Debug + Signed Release)
+name: Build AioWeb Android APK
 
 on:
   push:
     branches: [ main, master ]
+    paths:
+      - 'AioWebAndroid/**'
+      - '.github/workflows/build-apk.yml'
   pull_request:
     branches: [ main, master ]
+    paths:
+      - 'AioWebAndroid/**'
   workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: AioWebAndroid
 
 jobs:
   build:
@@ -29,26 +38,24 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('AioWebAndroid/**/*.gradle*', 'AioWebAndroid/**/gradle-wrapper.properties') }}
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       # ---------- Decode the release keystore from GitHub Secrets ----------
       # Required secrets (Settings → Secrets and variables → Actions):
-      #   KEYSTORE_BASE64    – `base64 -w0 release.keystore` of your .keystore file
+      #   KEYSTORE_BASE64    – `base64 -w0 release.keystore`
       #   KEYSTORE_PASSWORD  – store password
       #   KEY_ALIAS          – key alias
-      #   KEY_PASSWORD       – key password (often same as store password)
+      #   KEY_PASSWORD       – key password
       - name: Decode release keystore
-        id: keystore
         if: ${{ env.KEYSTORE_BASE64 != '' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
           echo "KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> $GITHUB_ENV
-          echo "has_keystore=true" >> $GITHUB_OUTPUT
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
@@ -79,7 +86,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AioWeb-apks
-          path: artifacts/*.apk
+          path: AioWebAndroid/artifacts/*.apk
           retention-days: 30
 
       - name: Create GitHub Release
@@ -87,14 +94,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: AioWeb Build ${{ github.run_number }}
-          files: artifacts/*.apk
+          name: AioWeb Android Build ${{ github.run_number }}
+          files: AioWebAndroid/artifacts/*.apk
           prerelease: true
           body: |
             Auto-built APKs from commit ${{ github.sha }}.
             
             - **AioWeb-debug-*.apk** — debug build, sideload-only.
-            - **AioWeb-release-signed-*.apk** — production-signed release (only present if release keystore secrets are configured).
-            - **AioWeb-release-UNSIGNED-*.apk** — produced when no keystore secrets exist; cannot be installed until signed.
+            - **AioWeb-release-signed-*.apk** — production-signed release (only if release keystore secrets are configured).
+            - **AioWeb-release-UNSIGNED-*.apk** — produced if no keystore secrets exist.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
