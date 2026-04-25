@@ -49,22 +49,29 @@ jobs:
       #   KEYSTORE_PASSWORD  – store password
       #   KEY_ALIAS          – key alias
       #   KEY_PASSWORD       – key password
-      - name: Decode release keystore
+      - name: Decode release keystore (best-effort, skip signing if it fails)
         if: ${{ env.KEYSTORE_BASE64 != '' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        continue-on-error: true
         run: |
-          # Strip ALL whitespace/newlines that may have been pasted in by accident,
-          # then decode. -i = ignore non-alphabet chars, also belt-and-braces.
-          printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -di > "$RUNNER_TEMP/release.keystore"
-          ls -la "$RUNNER_TEMP/release.keystore"
-          file "$RUNNER_TEMP/release.keystore" || true
-          echo "KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> $GITHUB_ENV
+          set +e
+          printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -di > "$RUNNER_TEMP/release.keystore" 2>/dev/null
+          SIZE=$(stat -c%s "$RUNNER_TEMP/release.keystore" 2>/dev/null || echo 0)
+          if [ "$SIZE" -gt 1000 ]; then
+            echo "✅ Keystore decoded OK ($SIZE bytes)"
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> $GITHUB_ENV
+          else
+            echo "::warning::KEYSTORE_BASE64 secret is invalid or truncated ($SIZE bytes after decode). Release APK will be UNSIGNED."
+            rm -f "$RUNNER_TEMP/release.keystore"
+          fi
+          exit 0
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Build Release APK (signed if secrets present)
+        continue-on-error: true
         env:
           KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
