@@ -60,7 +60,6 @@ class UpdateChecker(private val context: Context) {
     suspend fun fetchLatest(includeOlder: Boolean = false): UpdateInfo? = withContext(Dispatchers.IO) {
         val owner = BuildConfig.GITHUB_OWNER
         val repo = BuildConfig.GITHUB_REPO
-        // Prefer /releases (gives prereleases too — our CI marks them prerelease=true).
         val req = Request.Builder()
             .url("https://api.github.com/repos/$owner/$repo/releases?per_page=10")
             .header("Accept", "application/vnd.github+json")
@@ -68,19 +67,26 @@ class UpdateChecker(private val context: Context) {
             .header("User-Agent", "StreamCloud-Updater")
             .build()
         val body = http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) error("GitHub API HTTP ${resp.code}")
-            resp.body?.string().orEmpty()
+            when (resp.code) {
+                200 -> resp.body?.string().orEmpty()
+                404 -> error(
+                    "GitHub repo `$owner/$repo` has no releases yet, or is private.\n" +
+                            "First push to GitHub triggers a build that publishes the first release."
+                )
+                403 -> error("GitHub API rate limit hit. Try again in a few minutes.")
+                else -> error("GitHub API HTTP ${resp.code} ${resp.message}")
+            }
         }
         val releases = Net.json.decodeFromString(
             kotlinx.serialization.builtins.ListSerializer(GhRelease.serializer()), body,
         )
+        if (releases.isEmpty()) return@withContext null
         val latest = releases
             .firstOrNull { rel -> rel.assets.any { it.name.endsWith(".apk", ignoreCase = true) } }
-            ?: return@withContext null
+            ?: error("Latest release has no APK assets attached. Re-run the GitHub Actions build.")
 
         val apk = pickBestApk(latest.assets) ?: return@withContext null
 
-        // CI tags as `build-<run_number>` — extract the integer.
         val tagBuildNumber = Regex("(\\d+)").find(latest.tagName)?.value?.toIntOrNull() ?: 0
         val isNewer = tagBuildNumber > BuildConfig.VERSION_CODE
         if (!isNewer && !includeOlder) return@withContext null

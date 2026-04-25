@@ -96,7 +96,7 @@ class PluginsViewModel(private val repo: PluginRepository) : ViewModel() {
     }
 
     fun uninstall(p: InstalledPlugin) = viewModelScope.launch {
-        repo.uninstallPlugin(p.internalName)
+        repo.uninstallPlugin(p.internalName, p.sourceRepoId)
     }
 
     fun clearMessages() {

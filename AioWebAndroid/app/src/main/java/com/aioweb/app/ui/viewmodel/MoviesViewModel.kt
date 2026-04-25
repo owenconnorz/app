@@ -29,7 +29,12 @@ data class MoviesState(
     val loading: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
-)
+) {
+    /** Display name of the currently selected source: plugin name or "TMDB". */
+    val selectedSourceName: String
+        get() = if (selectedSourceId == SOURCE_BUILTIN) "TMDB"
+        else installedPlugins.firstOrNull { it.internalName == selectedSourceId }?.name ?: "Plugin"
+}
 
 class MoviesViewModel(
     private val sl: ServiceLocator,
@@ -74,9 +79,9 @@ class MoviesViewModel(
     fun selectSource(sourceId: String) {
         _state.update { it.copy(selectedSourceId = sourceId) }
         if (sourceId != SOURCE_BUILTIN) {
-            val name = _state.value.installedPlugins.firstOrNull { it.internalName == sourceId }?.name ?: sourceId
+            val name = _state.value.selectedSourceName
             _state.update {
-                it.copy(notice = "Source: $name. The plugin's home feed and search results will appear here once the CloudStream runtime ships in a future StreamCloud update — for now we keep showing the built-in catalogue.")
+                it.copy(notice = "Browsing as $name. Real plugin home feed lands once the CloudStream runtime ships — for now you're seeing TMDB content under $name's category names.")
             }
         } else {
             _state.update { it.copy(notice = null) }

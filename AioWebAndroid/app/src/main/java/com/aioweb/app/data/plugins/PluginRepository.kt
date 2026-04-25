@@ -38,8 +38,8 @@ class PluginRepository(private val context: Context) {
         prefs[KEY_REPOS]?.let {
             runCatching {
                 Net.json.decodeFromString(ListSerializer(CloudStreamRepo.serializer()), it)
-            }.getOrDefault(defaultRepos())
-        } ?: defaultRepos()
+            }.getOrDefault(emptyList())
+        } ?: emptyList()
     }
 
     val installed: Flow<List<InstalledPlugin>> = context.pluginStore.data.map { prefs ->
@@ -49,29 +49,6 @@ class PluginRepository(private val context: Context) {
             }.getOrDefault(emptyList())
         } ?: emptyList()
     }
-
-    private fun defaultRepos(): List<CloudStreamRepo> = listOf(
-        CloudStreamRepo(
-            id = "official",
-            name = "Recloudstream Official",
-            url = "https://raw.githubusercontent.com/recloudstream/extensions/builds",
-        ),
-        CloudStreamRepo(
-            id = "csx",
-            name = "CSX (CrazyCoder)",
-            url = "https://raw.githubusercontent.com/SaurabhKaperwan/CSX/master",
-        ),
-        CloudStreamRepo(
-            id = "phisher",
-            name = "Phisher98 Extensions",
-            url = "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds",
-        ),
-        CloudStreamRepo(
-            id = "kraken",
-            name = "Cloudstream Kraken",
-            url = "https://raw.githubusercontent.com/Adippe/Cloudstream-Kraken-Extensions/builds",
-        ),
-    )
 
     suspend fun addRepo(name: String, url: String) {
         val current = repos.first()
@@ -184,20 +161,23 @@ class PluginRepository(private val context: Context) {
                 sourceUrl = plugin.downloadUrl,
                 installedAt = System.currentTimeMillis(),
             )
-            val list = installed.let { i ->
-                this@PluginRepository.installed.first()
-                    .filterNot { it.internalName == i.internalName } + i
-            }
+            // Replace any prior install of the SAME plugin from the SAME repo only.
+            // (Plugins from different repos can legitimately share `internalName` —
+            // e.g., two forks of the same scraper — and must coexist.)
+            val list = this@PluginRepository.installed.first()
+                .filterNot { it.sourceRepoId == repo.id && it.internalName == installed.internalName } + installed
             saveInstalled(list)
             installed
         }
 
-    suspend fun uninstallPlugin(internalName: String) = withContext(Dispatchers.IO) {
+    suspend fun uninstallPlugin(internalName: String, sourceRepoId: String? = null) = withContext(Dispatchers.IO) {
         val current = installed.first()
-        current.firstOrNull { it.internalName == internalName }?.let {
-            File(it.filePath).delete()
+        val matches = current.filter {
+            it.internalName == internalName && (sourceRepoId == null || it.sourceRepoId == sourceRepoId)
         }
-        saveInstalled(current.filterNot { it.internalName == internalName })
+        matches.forEach { File(it.filePath).delete() }
+        val keep = current - matches.toSet()
+        saveInstalled(keep)
     }
 
     /** Total bytes used by installed plugin files. */

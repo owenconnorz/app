@@ -86,8 +86,9 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                     )
                 }
             } else {
+                val srcLabel = state.selectedSourceName
                 if (state.trending.isNotEmpty()) {
-                    item { SectionTitle("Trending this week") }
+                    item { SectionTitle("$srcLabel · Trending this week") }
                     item {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -100,7 +101,7 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                     }
                 }
                 if (state.nowPlaying.isNotEmpty()) {
-                    item { SectionTitle("In theatres") }
+                    item { SectionTitle("$srcLabel · In theatres") }
                     item {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -113,7 +114,7 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                     }
                 }
                 if (state.popular.isNotEmpty()) {
-                    item { SectionTitle("Popular") }
+                    item { SectionTitle("$srcLabel · Popular") }
                     item {
                         PosterGrid(
                             movies = state.popular.take(9),
@@ -122,7 +123,7 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                     }
                 }
                 if (state.topRated.isNotEmpty()) {
-                    item { SectionTitle("Top rated of all time") }
+                    item { SectionTitle("$srcLabel · Top rated") }
                     item {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),

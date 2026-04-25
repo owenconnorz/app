@@ -83,13 +83,44 @@ fun PluginsScreen(onBack: () -> Unit) {
                 item {
                     SectionLabel("Installed (${state.installed.size})")
                 }
-                items(state.installed, key = { it.internalName }) { p ->
+                items(
+                    state.installed,
+                    key = { p -> "inst_${p.sourceRepoId}_${p.internalName}_${p.installedAt}" },
+                ) { p ->
                     InstalledRow(p, onUninstall = { vm.uninstall(p) })
                 }
                 item { Spacer(Modifier.height(8.dp)) }
             }
 
             item { SectionLabel("Repositories") }
+
+            if (state.repos.isEmpty()) {
+                item {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(20.dp),
+                    ) {
+                        Text(
+                            "No repositories yet",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Tap the + icon and paste a CloudStream `repo.json` URL to get started. " +
+                                    "Popular community lists:\n" +
+                                    "• https://raw.githubusercontent.com/recloudstream/extensions/builds\n" +
+                                    "• https://raw.githubusercontent.com/SaurabhKaperwan/CSX/master\n" +
+                                    "• https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
 
             items(state.repos, key = { it.id }) { repo ->
                 RepoCard(
