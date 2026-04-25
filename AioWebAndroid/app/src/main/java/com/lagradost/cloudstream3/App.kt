@@ -85,8 +85,11 @@ object app {
         }
         when (method.uppercase()) {
             "POST" -> {
+                val pair = body as? Pair<*, *>
                 @Suppress("UNCHECKED_CAST")
-                val (raw, ct) = body as? Pair<ByteArray?, String> ?: (null to "application/octet-stream")
+                val raw = pair?.first as? ByteArray
+                @Suppress("UNCHECKED_CAST")
+                val ct = (pair?.second as? String) ?: "application/octet-stream"
                 builder.post((raw ?: ByteArray(0)).toRequestBody(ct.toMediaType()))
             }
             "HEAD" -> builder.head()

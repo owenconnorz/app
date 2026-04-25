@@ -150,7 +150,6 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
             } else {
                 val srcLabel = state.selectedSourceName
                 if (state.trending.isNotEmpty()) {
-                if (state.trending.isNotEmpty()) {
                     item { SectionTitle("$srcLabel · Trending this week") }
                     item {
                         LazyRow(
