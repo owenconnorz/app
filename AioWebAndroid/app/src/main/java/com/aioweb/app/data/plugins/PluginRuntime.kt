@@ -38,21 +38,35 @@ object PluginRuntime {
     suspend fun load(context: Context, filePath: String): List<MainAPI> = withContext(Dispatchers.IO) {
         cache[filePath]?.let { return@withContext it.apis }
         try {
-            val file = File(filePath)
-            if (!file.exists()) error("Plugin file missing: $filePath")
+            val src = File(filePath)
+            if (!src.exists()) error("Plugin file missing: $filePath")
+            // Android 14+ refuses to load DEX from a writable file. Copy it into a
+            // private read-only location and chmod it.
+            val readOnlyDir = File(context.codeCacheDir, "plugins-ro").apply { mkdirs() }
+            val readOnlyFile = File(readOnlyDir, src.name)
+            if (!readOnlyFile.exists() ||
+                readOnlyFile.length() != src.length() ||
+                readOnlyFile.lastModified() < src.lastModified()
+            ) {
+                src.copyTo(readOnlyFile, overwrite = true)
+            }
+            // setReadOnly() flips the user-write bit. Required for `DexClassLoader` on
+            // API 34+ — otherwise we get `SecurityException: Writable dex file ... is not allowed`.
+            @Suppress("ResultOfMethodCallIgnored")
+            readOnlyFile.setReadOnly()
+
             val optimizedDir = File(context.codeCacheDir, "plugins-opt").apply { mkdirs() }
             val loader = DexClassLoader(
-                file.absolutePath,
+                readOnlyFile.absolutePath,
                 optimizedDir.absolutePath,
                 null,
                 context.classLoader,
             )
-            val pluginClassName = readPluginClassName(file)
+            val pluginClassName = readPluginClassName(readOnlyFile)
                 ?: error("Could not find plugin class — no `Plugin-Class` in MANIFEST.MF")
             val klass = loader.loadClass(pluginClassName)
             val instance = klass.getDeclaredConstructor().newInstance() as? Plugin
                 ?: error("Class `$pluginClassName` is not a subclass of `Plugin`")
-            // Plugins usually invoke registerMainAPI from load(context).
             instance.beforeLoad()
             instance.load(context)
             instance.afterLoad()
