@@ -77,18 +77,45 @@ object NewPipeRepository {
      * Strategy mirrors Metrolist's: prefer M4A audio-only at the highest bitrate that
      * ExoPlayer's M4A muxer reliably handles (≤ 256kbps). Fall back to WEBM/OPUS if no
      * M4A is offered.
+     *
+     * **Auto-recovery**: NewPipe occasionally throws `ContentNotAvailableException` /
+     * `ParsingException` with messages like *"the page needs to be reloaded"* when
+     * YouTube rotates its nsig algorithm. We catch that, force a NewPipe reset, and
+     * retry once.
      */
     suspend fun resolveAudioStream(url: String): String = withContext(Dispatchers.IO) {
+        try {
+            extractAudioOnce(url)
+        } catch (first: Exception) {
+            val msg = (first.message ?: "").lowercase()
+            val isStale = "page" in msg && "reload" in msg ||
+                    "could not parse" in msg ||
+                    "signature" in msg ||
+                    "decipher" in msg ||
+                    "nsig" in msg
+            if (!isStale) throw first
+            // Cold-restart NewPipe and try one more time before giving up.
+            try {
+                NewPipe.init(
+                    NewPipeDownloader.instance,
+                    org.schabi.newpipe.extractor.localization.Localization.DEFAULT,
+                    org.schabi.newpipe.extractor.localization.ContentCountry.DEFAULT,
+                )
+            } catch (_: Throwable) { /* already initialised; ignore */ }
+            extractAudioOnce(url)
+        }
+    }
+
+    private fun extractAudioOnce(url: String): String {
         val info = StreamInfo.getInfo(NewPipe.getService(0), url)
         if (info.audioStreams.isNullOrEmpty()) {
             error("YouTube returned no audio streams for this track. (PoToken/age-gate or region block)")
         }
-        // Prefer M4A first (mostly works flawlessly in ExoPlayer), fall back to WEBM.
         val m4a = info.audioStreams.filter { it.format?.suffix?.equals("m4a", true) == true }
         val pool = if (m4a.isNotEmpty()) m4a else info.audioStreams
         val best = pool.maxByOrNull { it.averageBitrate }
             ?: error("Could not pick an audio stream from ${info.audioStreams.size} candidates.")
-        best.content?.takeIf { it.isNotBlank() }
+        return best.content?.takeIf { it.isNotBlank() }
             ?: error("Selected audio stream had a blank URL. Try another track.")
     }
 }
