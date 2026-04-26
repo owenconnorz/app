@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.aioweb.app.data.ServiceLocator
 import com.aioweb.app.data.api.TmdbMovie
+import com.aioweb.app.data.collections.HomeCollection
+import com.aioweb.app.data.collections.HomeCollections
 import com.aioweb.app.data.plugins.InstalledPlugin
 import com.aioweb.app.data.plugins.PluginRepository
 import com.aioweb.app.data.plugins.PluginRuntime
@@ -14,10 +16,14 @@ import com.aioweb.app.data.stremio.StremioMetaPreview
 import com.aioweb.app.data.stremio.StremioRepository
 import com.lagradost.cloudstream3.SearchResponse
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -28,11 +34,20 @@ data class PluginSection(
     val items: List<SearchResponse>,
 )
 
+data class CollectionRow(
+    val id: String,
+    val title: String,
+    val emoji: String,
+    val items: List<TmdbMovie>,
+)
+
 data class MoviesState(
     val trending: List<TmdbMovie> = emptyList(),
     val popular: List<TmdbMovie> = emptyList(),
     val topRated: List<TmdbMovie> = emptyList(),
     val nowPlaying: List<TmdbMovie> = emptyList(),
+    val collections: List<CollectionRow> = emptyList(),
+    val heroBanner: List<TmdbMovie> = emptyList(),
     val searchResults: List<TmdbMovie> = emptyList(),
     val installedPlugins: List<InstalledPlugin> = emptyList(),
     val installedStremioAddons: List<InstalledStremioAddon> = emptyList(),
@@ -66,7 +81,6 @@ class MoviesViewModel(
     private var searchJob: Job? = null
 
     init {
-        loadDiscover()
         viewModelScope.launch {
             pluginRepo.installed.collect { list ->
                 _state.update { it.copy(installedPlugins = list) }
@@ -77,6 +91,10 @@ class MoviesViewModel(
                 _state.update { it.copy(installedStremioAddons = list) }
             }
         }
+        // Auto-reload home rows whenever the user toggles a collection in Settings.
+        viewModelScope.launch {
+            sl.settings.homeCollectionsCsv.collectLatest { loadDiscover() }
+        }
     }
 
     fun loadDiscover() {
@@ -84,17 +102,39 @@ class MoviesViewModel(
             _state.update { it.copy(loading = true, error = null) }
             try {
                 val key = sl.tmdbApiKey
-                val trending = sl.tmdb.trending("week", key).results
-                val popular = sl.tmdb.popular(key).results
-                val topRated = sl.tmdb.topRated(key).results
-                val nowPlaying = sl.tmdb.nowPlaying(key).results
-                _state.update { it.copy(
-                    trending = trending,
-                    popular = popular,
-                    topRated = topRated,
-                    nowPlaying = nowPlaying,
-                    loading = false,
-                ) }
+
+                // Resolve which collections to render based on user settings — fall back to defaults.
+                val csv = sl.settings.homeCollectionsCsv.first()
+                val ids = csv?.takeIf { it.isNotBlank() }?.split(',')
+                    ?: HomeCollections.ALL.filter { it.defaultEnabled }.map { it.id }
+                val collections: List<HomeCollection> = ids.mapNotNull { HomeCollections.byId(it) }
+
+                // Fan out — fetch all enabled rows in parallel.
+                val rows = collections.map { def ->
+                    async {
+                        val items = runCatching { def.fetch(sl.tmdb, key) }.getOrDefault(emptyList())
+                        if (items.isEmpty()) null
+                        else CollectionRow(def.id, def.title, def.emoji, items)
+                    }
+                }.awaitAll().filterNotNull()
+
+                // Compatibility shim: keep populated trending/popular/topRated/nowPlaying for any
+                // older UI paths still pulling from them directly.
+                val byId = rows.associateBy { it.id }
+                _state.update {
+                    it.copy(
+                        trending = byId["trending"]?.items ?: emptyList(),
+                        popular = byId["popular"]?.items ?: emptyList(),
+                        topRated = byId["top_rated"]?.items ?: emptyList(),
+                        nowPlaying = byId["now_playing"]?.items ?: emptyList(),
+                        collections = rows,
+                        heroBanner = (byId["trending"]?.items
+                            ?: byId["now_playing"]?.items
+                            ?: rows.firstOrNull()?.items
+                            ?: emptyList()).take(7),
+                        loading = false,
+                    )
+                }
             } catch (e: Exception) {
                 _state.update { it.copy(error = "Failed to load: ${e.message}", loading = false) }
             }

@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.aioweb.app.BuildConfig
 import com.aioweb.app.data.ServiceLocator
+import com.aioweb.app.data.collections.HomeCollections
 import com.aioweb.app.data.plugins.PluginRepository
 import com.aioweb.app.data.updater.UpdateChecker
 import com.aioweb.app.data.updater.UpdateInfo
@@ -72,6 +73,8 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
     var eqPreset by remember { mutableStateOf("flat") }
     var bassBoost by remember { mutableStateOf(false) }
     var showEqDialog by remember { mutableStateOf(false) }
+    var enabledCollections by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showCollectionsDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         url = sl.settings.backendUrl.first()
@@ -89,6 +92,9 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
         eqEnabled = sl.settings.eqEnabled.first()
         eqPreset = sl.settings.eqPreset.first()
         bassBoost = sl.settings.bassBoost.first()
+        val csv = sl.settings.homeCollectionsCsv.first()
+        enabledCollections = csv?.takeIf { it.isNotBlank() }?.split(",")?.toSet()
+            ?: HomeCollections.ALL.filter { it.defaultEnabled }.map { it.id }.toSet()
         pluginsCacheBytes = pluginRepo.pluginsCacheSize()
     }
 
@@ -152,6 +158,15 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
                 subtitle = "Show subtitles when available",
                 checked = subs,
                 onChange = { subs = it; scope.launch { sl.settings.setSubtitlesEnabled(it) } },
+            )
+        }
+
+        Section("Home") {
+            NavRow(
+                icon = Icons.Default.PlayCircle,
+                title = "Home collections",
+                subtitle = "${enabledCollections.size} of ${HomeCollections.ALL.size} enabled",
+                onClick = { showCollectionsDialog = true },
             )
         }
 
@@ -382,6 +397,71 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
                 showEqDialog = false
             },
             onDismiss = { showEqDialog = false },
+        )
+    }
+    if (showCollectionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showCollectionsDialog = false },
+            title = { Text("Home collections") },
+            text = {
+                Column(
+                    Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        "Pick which rows show on the Movies tab. The first enabled collection drives the top hero banner.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    HomeCollections.ALL.forEach { c ->
+                        val checked = c.id in enabledCollections
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    enabledCollections =
+                                        if (checked) enabledCollections - c.id
+                                        else enabledCollections + c.id
+                                }
+                                .padding(vertical = 4.dp),
+                        ) {
+                            Text(
+                                c.emoji,
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                                style = MaterialTheme.typography.titleLarge,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    c.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    c.subtitle,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Checkbox(checked = checked, onCheckedChange = { v ->
+                                enabledCollections =
+                                    if (v) enabledCollections + c.id else enabledCollections - c.id
+                            })
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val ordered = HomeCollections.ALL.map { it.id }.filter { it in enabledCollections }
+                    scope.launch { sl.settings.setHomeCollections(ordered) }
+                    showCollectionsDialog = false
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCollectionsDialog = false }) { Text("Cancel") }
+            },
         )
     }
 }

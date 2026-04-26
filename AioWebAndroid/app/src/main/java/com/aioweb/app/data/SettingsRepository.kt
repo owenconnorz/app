@@ -29,6 +29,7 @@ object SettingsKeys {
     val EQ_PRESET = stringPreferencesKey("eq_preset")             // flat / pop / rock / jazz / bass / vocal
     val BASS_BOOST = booleanPreferencesKey("bass_boost")
     val HF_TOKEN = stringPreferencesKey("hf_token")               // HuggingFace token for NSFW + image edit
+    val HOME_COLLECTIONS = stringPreferencesKey("home_collections") // CSV of enabled collection ids
 }
 
 class SettingsRepository(private val context: Context) {
@@ -53,6 +54,12 @@ class SettingsRepository(private val context: Context) {
     val falApiKey: Flow<String> = context.dataStore.data.map { it[SettingsKeys.HF_TOKEN] ?: "" }
     val hfToken: Flow<String> = context.dataStore.data.map { it[SettingsKeys.HF_TOKEN] ?: "" }
 
+    /**
+     * Enabled "Home collections" — null/blank means "use defaults from
+     * [com.aioweb.app.data.collections.HomeCollections]".
+     */
+    val homeCollectionsCsv: Flow<String?> = context.dataStore.data.map { it[SettingsKeys.HOME_COLLECTIONS] }
+
     suspend fun setBackendUrl(url: String) = context.dataStore.edit { it[SettingsKeys.BACKEND_URL] = url }
     suspend fun setAiProvider(p: String) = context.dataStore.edit { it[SettingsKeys.AI_PROVIDER] = p }
     suspend fun setAiModel(m: String) = context.dataStore.edit { it[SettingsKeys.AI_MODEL] = m }
@@ -71,4 +78,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setBassBoost(b: Boolean) = context.dataStore.edit { it[SettingsKeys.BASS_BOOST] = b }
     suspend fun setFalApiKey(k: String) = context.dataStore.edit { it[SettingsKeys.HF_TOKEN] = k }
     suspend fun setHfToken(k: String) = context.dataStore.edit { it[SettingsKeys.HF_TOKEN] = k }
+
+    suspend fun setHomeCollections(ids: List<String>) =
+        context.dataStore.edit { it[SettingsKeys.HOME_COLLECTIONS] = ids.joinToString(",") }
 }

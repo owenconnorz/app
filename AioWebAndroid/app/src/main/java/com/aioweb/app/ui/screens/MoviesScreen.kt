@@ -1,11 +1,14 @@
 package com.aioweb.app.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.aioweb.app.data.api.TmdbMovie
@@ -150,52 +154,40 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                 }
             } else {
                 val srcLabel = state.selectedSourceName
-                if (state.trending.isNotEmpty()) {
-                    item { SectionTitle("$srcLabel · Trending this week") }
-                    item {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            items(state.trending, key = { "tr_${it.id}" }) { m ->
-                                HeroPoster(m, onClick = { onMovieClick(m.id) })
-                            }
-                        }
-                    }
-                }
-                if (state.nowPlaying.isNotEmpty()) {
-                    item { SectionTitle("$srcLabel · In theatres") }
-                    item {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            items(state.nowPlaying, key = { "np_${it.id}" }) { m ->
-                                MidPoster(m, onClick = { onMovieClick(m.id) })
-                            }
-                        }
-                    }
-                }
-                if (state.popular.isNotEmpty()) {
-                    item { SectionTitle("$srcLabel · Popular") }
-                    item {
-                        PosterGrid(
-                            movies = state.popular.take(9),
-                            onClick = onMovieClick,
+                if (state.heroBanner.isNotEmpty()) {
+                    item(key = "hero_pager") {
+                        HeroPager(
+                            items = state.heroBanner,
+                            onClick = { onMovieClick(it) },
                         )
                     }
                 }
-                if (state.topRated.isNotEmpty()) {
-                    item { SectionTitle("$srcLabel · Top rated") }
-                    item {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            items(state.topRated, key = { "tp_${it.id}" }) { m ->
-                                MidPoster(m, onClick = { onMovieClick(m.id) })
+                state.collections.forEachIndexed { idx, row ->
+                    item(key = "col_t_${row.id}") { SectionTitle("${row.emoji}  ${row.title}") }
+                    item(key = "col_${row.id}") {
+                        if (idx == 0 || row.id == "popular") {
+                            // Top trending row uses a tighter 3x grid.
+                            PosterGrid(movies = row.items.take(9), onClick = onMovieClick)
+                        } else {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                items(row.items, key = { "${row.id}_${it.id}" }) { m ->
+                                    MidPoster(m, onClick = { onMovieClick(m.id) })
+                                }
                             }
                         }
+                    }
+                }
+                if (state.collections.isEmpty() && !state.loading) {
+                    item {
+                        Text(
+                            "No collections enabled. Open Settings → Home collections to pick rows.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(20.dp),
+                        )
                     }
                 }
             }
@@ -219,6 +211,137 @@ private fun MoviesHeader() {
         )
     }
 }
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HeroPager(
+    items: List<TmdbMovie>,
+    onClick: (Long) -> Unit,
+) {
+    val pagerState = rememberPagerState(pageCount = { items.size })
+
+    // Auto-advance every 6 seconds — Nuvio-style.
+    LaunchedEffect(items.size) {
+        if (items.size <= 1) return@LaunchedEffect
+        while (true) {
+            kotlinx.coroutines.delay(6_000)
+            val next = (pagerState.currentPage + 1) % items.size
+            pagerState.animateScrollToPage(next)
+        }
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(520.dp),
+            pageSpacing = 0.dp,
+        ) { page ->
+            val m = items[page]
+            HeroBannerSlide(movie = m, onClick = { onClick(m.id) })
+        }
+        Spacer(Modifier.height(10.dp))
+        // Dot indicator
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            items.forEachIndexed { i, _ ->
+                val active = i == pagerState.currentPage
+                Box(
+                    Modifier
+                        .padding(horizontal = 4.dp)
+                        .height(6.dp)
+                        .width(if (active) 22.dp else 6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (active) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        )
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun HeroBannerSlide(movie: TmdbMovie, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick),
+    ) {
+        AsyncImage(
+            model = movie.backdropUrl ?: movie.posterUrl,
+            contentDescription = movie.displayTitle,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        // Vertical scrim — dark on top + bottom for text legibility.
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.Black.copy(alpha = 0.45f),
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.92f),
+                    ),
+                    startY = 0f,
+                    endY = Float.POSITIVE_INFINITY,
+                )
+            )
+        )
+        // Bottom-anchored content
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                movie.displayTitle,
+                style = MaterialTheme.typography.displayLarge.copy(
+                    fontWeight = FontWeight.Black,
+                    fontSize = 36.sp,
+                    lineHeight = 40.sp,
+                ),
+                color = Color.White,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(8.dp))
+            val meta = listOfNotNull(
+                "Movie",
+                movie.releaseDate?.takeIf { it.isNotBlank() }?.substringBefore('-'),
+                movie.voteAverage?.takeIf { it > 0 }?.let { String.format("%.1f ★", it) },
+            ).joinToString("  •  ")
+            Text(
+                meta,
+                color = Color.White.copy(alpha = 0.85f),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Spacer(Modifier.height(18.dp))
+            // White "View Details" pill (matches Nuvio screenshot exactly)
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White)
+                    .clickable(onClick = onClick)
+                    .padding(horizontal = 38.dp, vertical = 14.dp),
+            ) {
+                Text(
+                    "View Details",
+                    color = Color(0xFF111111),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                )
+            }
+        }
+    }
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

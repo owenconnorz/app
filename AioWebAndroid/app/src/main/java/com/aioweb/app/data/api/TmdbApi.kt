@@ -93,4 +93,15 @@ interface TmdbApi {
         @retrofit2.http.Path("id") id: Long,
         @Query("api_key") apiKey: String,
     ): TmdbExternalIds
+
+    /** Generic discover endpoint — used by Nuvio-style collections (Marvel, DC, etc.). */
+    @GET("3/discover/movie")
+    suspend fun discover(
+        @Query("api_key") apiKey: String,
+        @Query("with_companies") withCompanies: String? = null,
+        @Query("with_genres") withGenres: String? = null,
+        @Query("with_keywords") withKeywords: String? = null,
+        @Query("sort_by") sortBy: String = "popularity.desc",
+        @Query("page") page: Int = 1,
+    ): TmdbListResponse
 }
