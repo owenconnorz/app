@@ -30,6 +30,7 @@ class MusicPlaybackService : MediaSessionService() {
 
     private var session: MediaSession? = null
     private var cache: SimpleCache? = null
+    private var audioFx: AudioFx? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -81,6 +82,9 @@ class MusicPlaybackService : MediaSessionService() {
         session = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivityIntent)
             .build()
+
+        // Equalizer + bass boost — bound to the player's audio session.
+        audioFx = AudioFx(applicationContext, player.audioSessionId).also { it.start() }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -91,6 +95,7 @@ class MusicPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        audioFx?.release(); audioFx = null
         session?.run {
             player.release()
             release()

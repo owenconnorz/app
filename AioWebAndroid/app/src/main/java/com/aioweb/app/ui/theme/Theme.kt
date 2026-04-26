@@ -1,17 +1,24 @@
 package com.aioweb.app.ui.theme
 
+import android.os.Build
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import com.aioweb.app.data.ServiceLocator
 
 private val AioColors = darkColorScheme(
     primary = Violet,
@@ -71,14 +78,25 @@ private val AioTypography = Typography(
 
 @Composable
 fun AioWebTheme(content: @Composable () -> Unit) {
-    val colors = AioColors
+    val context = LocalContext.current
+    val sl = remember { ServiceLocator.get(context) }
+    val dynamicEnabled by sl.settings.dynamicColor.collectAsState(initial = false)
+
+    val supportsDynamic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val colors = if (dynamicEnabled && supportsDynamic) {
+        // Monet dynamic dark scheme — pulled from system wallpaper / accent.
+        dynamicDarkColorScheme(context)
+    } else {
+        AioColors
+    }
+
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? android.app.Activity)?.window
             if (window != null) {
-                window.statusBarColor = Bg.toArgb()
-                window.navigationBarColor = Bg.toArgb()
+                window.statusBarColor = colors.background.toArgbInt()
+                window.navigationBarColor = colors.background.toArgbInt()
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
             }
         }
@@ -86,6 +104,6 @@ fun AioWebTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors, typography = AioTypography, content = content)
 }
 
-private fun Color.toArgb(): Int = android.graphics.Color.argb(
+private fun Color.toArgbInt(): Int = android.graphics.Color.argb(
     (alpha * 255).toInt(), (red * 255).toInt(), (green * 255).toInt(), (blue * 255).toInt()
 )

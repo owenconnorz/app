@@ -96,7 +96,11 @@ class MusicViewModel(context: Context) : ViewModel() {
         viewModelScope.launch {
             _state.update { it.copy(resolvingUrl = track.url, error = null) }
             try {
-                val audio = NewPipeRepository.resolveAudioStream(track.url)
+                // Prefer offline copy when available (Metrolist parity).
+                val cached = dao.byUrl(track.url)?.localPath?.takeIf {
+                    java.io.File(it).exists()
+                }
+                val audio = cached ?: NewPipeRepository.resolveAudioStream(track.url)
                 _state.update {
                     it.copy(
                         nowPlayingUrl = track.url,
@@ -111,6 +115,7 @@ class MusicViewModel(context: Context) : ViewModel() {
                     TrackEntity(
                         url = track.url, title = track.title, artist = track.uploader,
                         durationSec = track.durationSec, thumbnail = track.thumbnail,
+                        localPath = cached,
                     )
                 )
                 dao.bumpPlayed(track.url, ts)

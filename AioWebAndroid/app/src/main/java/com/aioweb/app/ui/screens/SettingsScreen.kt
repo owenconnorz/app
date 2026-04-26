@@ -67,6 +67,11 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
     var showQualityVideoDialog by remember { mutableStateOf(false) }
     var showQualityAudioDialog by remember { mutableStateOf(false) }
     var falKey by remember { mutableStateOf("") }
+    var dynamicColor by remember { mutableStateOf(false) }
+    var eqEnabled by remember { mutableStateOf(false) }
+    var eqPreset by remember { mutableStateOf("flat") }
+    var bassBoost by remember { mutableStateOf(false) }
+    var showEqDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         url = sl.settings.backendUrl.first()
@@ -80,6 +85,10 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
         subs = sl.settings.subtitlesEnabled.first()
         dlWifi = sl.settings.downloadOverWifiOnly.first()
         falKey = sl.settings.hfToken.first()
+        dynamicColor = sl.settings.dynamicColor.first()
+        eqEnabled = sl.settings.eqEnabled.first()
+        eqPreset = sl.settings.eqPreset.first()
+        bassBoost = sl.settings.bassBoost.first()
         pluginsCacheBytes = pluginRepo.pluginsCacheSize()
     }
 
@@ -143,6 +152,51 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
                 subtitle = "Show subtitles when available",
                 checked = subs,
                 onChange = { subs = it; scope.launch { sl.settings.setSubtitlesEnabled(it) } },
+            )
+        }
+
+        Section("Audio FX") {
+            ToggleRow(
+                icon = Icons.Default.GraphicEq,
+                title = "Equalizer",
+                subtitle = if (eqEnabled) "On · ${eqPreset.replaceFirstChar { it.uppercase() }} preset"
+                           else "Off — tap to enable & pick a preset",
+                checked = eqEnabled,
+                onChange = {
+                    eqEnabled = it
+                    scope.launch { sl.settings.setEqEnabled(it) }
+                },
+            )
+            if (eqEnabled) {
+                NavRow(
+                    icon = Icons.Default.GraphicEq,
+                    title = "EQ preset",
+                    subtitle = eqPreset.replaceFirstChar { it.uppercase() },
+                    onClick = { showEqDialog = true },
+                )
+            }
+            ToggleRow(
+                icon = Icons.Default.GraphicEq,
+                title = "Bass boost",
+                subtitle = "Adds extra low-end punch",
+                checked = bassBoost,
+                onChange = {
+                    bassBoost = it
+                    scope.launch { sl.settings.setBassBoost(it) }
+                },
+            )
+        }
+
+        Section("Appearance") {
+            ToggleRow(
+                icon = Icons.Default.AutoAwesome,
+                title = "Material You (Monet)",
+                subtitle = "Match colors to your wallpaper · Android 12+",
+                checked = dynamicColor,
+                onChange = {
+                    dynamicColor = it
+                    scope.launch { sl.settings.setDynamicColor(it) }
+                },
             )
         }
 
@@ -308,6 +362,26 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
                 showQualityAudioDialog = false
             },
             onDismiss = { showQualityAudioDialog = false },
+        )
+    }
+    if (showEqDialog) {
+        QualityDialog(
+            title = "Equalizer preset",
+            options = listOf(
+                "flat" to "Flat (no change)",
+                "pop" to "Pop",
+                "rock" to "Rock",
+                "jazz" to "Jazz",
+                "bass" to "Bass booster",
+                "vocal" to "Vocal",
+            ),
+            selected = eqPreset,
+            onSelect = {
+                eqPreset = it
+                scope.launch { sl.settings.setEqPreset(it) }
+                showEqDialog = false
+            },
+            onDismiss = { showEqDialog = false },
         )
     }
 }

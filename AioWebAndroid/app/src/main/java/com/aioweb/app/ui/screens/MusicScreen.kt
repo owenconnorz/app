@@ -12,6 +12,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -39,6 +41,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.aioweb.app.data.newpipe.YtTrack
 import com.aioweb.app.ui.viewmodel.MusicViewModel
+import kotlinx.coroutines.launch
 
 private val SUGGESTIONS = listOf(
     "Top hits 2026", "Lo-fi beats", "Chill", "Workout",
@@ -52,6 +55,7 @@ fun MusicScreen() {
     val vm: MusicViewModel = viewModel(factory = MusicViewModel.factory(context))
     val state by vm.state.collectAsState()
     var query by remember { mutableStateOf("") }
+    val dlScope = rememberCoroutineScope()
 
     // The Player is now a MediaController bound to our foreground MusicPlaybackService.
     // This makes audio survive navigation AND auto-publishes the system notification.
@@ -299,15 +303,31 @@ fun MusicScreen() {
 
         // Now-Playing full sheet (lyrics + sleep timer + repeat/shuffle)
         var showNowPlaying by remember { mutableStateOf(false) }
+        val downloadProgressMap by com.aioweb.app.data.downloads.MusicDownloader
+            .progressFlow.collectAsState(initial = emptyMap())
 
         // Mini player bar
         nowPlaying?.let { track ->
+            val dlProgress = downloadProgressMap[track.url]
+            val downloaded = state.recent.firstOrNull { it.url == track.url }?.localPath != null ||
+                state.liked.firstOrNull { it.url == track.url }?.localPath != null
             MiniPlayer(
                 track = track,
                 isPlaying = isPlaying,
                 isLiked = state.isCurrentLiked,
+                isDownloaded = downloaded,
+                downloadProgress = dlProgress,
                 onToggle = { if (player?.isPlaying == true) player?.pause() else player?.play() },
                 onLike = { vm.toggleLikeCurrent() },
+                onDownload = {
+                    val ctx = context
+                    dlScope.launch {
+                        runCatching {
+                            com.aioweb.app.data.downloads.MusicDownloader
+                                .download(ctx, track.url, track.title)
+                        }
+                    }
+                },
                 onExpand = { showNowPlaying = true },
                 onSkipNext = {
                     val idx = state.tracks.indexOfFirst { it.url == track.url }
@@ -636,10 +656,13 @@ private fun MiniPlayer(
     track: YtTrack,
     isPlaying: Boolean,
     isLiked: Boolean,
+    isDownloaded: Boolean,
+    downloadProgress: Float?,
     onToggle: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrev: () -> Unit,
     onLike: () -> Unit,
+    onDownload: () -> Unit,
     onExpand: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -678,12 +701,27 @@ private fun MiniPlayer(
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
+            if (downloadProgress != null) {
+                Spacer(Modifier.height(2.dp))
+                LinearProgressIndicator(
+                    progress = { downloadProgress },
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                )
+            }
         }
         IconButton(onClick = onLike) {
             Icon(
                 if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 if (isLiked) "Unlike" else "Like",
                 tint = if (isLiked) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = onDownload, enabled = !isDownloaded && downloadProgress == null) {
+            Icon(
+                if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                if (isDownloaded) "Downloaded" else "Download",
+                tint = if (isDownloaded) MaterialTheme.colorScheme.primary
                        else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

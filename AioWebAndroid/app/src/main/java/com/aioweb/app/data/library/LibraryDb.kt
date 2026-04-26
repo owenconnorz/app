@@ -23,6 +23,7 @@ data class TrackEntity(
     @ColumnInfo(name = "liked_at") val likedAt: Long? = null,
     @ColumnInfo(name = "last_played") val lastPlayed: Long? = null,
     @ColumnInfo(name = "play_count") val playCount: Int = 0,
+    @ColumnInfo(name = "local_path") val localPath: String? = null,
 )
 
 @Dao
@@ -36,11 +37,20 @@ interface TrackDao {
     @Query("UPDATE tracks SET liked_at = :ts WHERE url = :url")
     suspend fun setLikedAt(url: String, ts: Long?)
 
+    @Query("UPDATE tracks SET local_path = :path WHERE url = :url")
+    suspend fun setLocalPath(url: String, path: String?)
+
+    @Query("SELECT * FROM tracks WHERE url = :url LIMIT 1")
+    suspend fun byUrl(url: String): TrackEntity?
+
     @Query("SELECT * FROM tracks WHERE last_played IS NOT NULL ORDER BY last_played DESC LIMIT 100")
     fun recent(): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE liked_at IS NOT NULL ORDER BY liked_at DESC")
     fun liked(): Flow<List<TrackEntity>>
+
+    @Query("SELECT * FROM tracks WHERE local_path IS NOT NULL ORDER BY title ASC")
+    fun downloaded(): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks ORDER BY play_count DESC LIMIT 30")
     fun mostPlayed(): Flow<List<TrackEntity>>
@@ -49,7 +59,7 @@ interface TrackDao {
     fun isLiked(url: String): Flow<Boolean?>
 }
 
-@Database(entities = [TrackEntity::class], version = 1, exportSchema = false)
+@Database(entities = [TrackEntity::class], version = 2, exportSchema = false)
 abstract class LibraryDb : RoomDatabase() {
     abstract fun tracks(): TrackDao
     companion object {

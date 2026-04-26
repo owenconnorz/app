@@ -37,7 +37,7 @@ object MusicController {
                     val c = f.get()
                     controller = c
                     cont.resume(c)
-                }.onFailure { cont.resume(throw it) }
+                }.onFailure { cont.resumeWith(Result.failure(it)) }
             }, MoreExecutors.directExecutor())
             cont.invokeOnCancellation { runCatching { f.cancel(true) } }
         }

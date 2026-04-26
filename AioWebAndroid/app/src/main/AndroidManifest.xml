@@ -15,6 +15,8 @@
         android:maxSdkVersion="32" />
     <!-- Self-update via GitHub Releases (sideloaded APK install) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Equalizer / Bass-boost (Metrolist parity) -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <application
         android:name=".AioWebApplication"
