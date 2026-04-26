@@ -225,10 +225,22 @@ private fun InstalledRow(p: InstalledPlugin, onUninstall: () -> Unit) {
             .background(MaterialTheme.colorScheme.surface)
             .padding(12.dp),
     ) {
-        Icon(
-            Icons.Default.Extension, null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
+        if (!p.iconUrl.isNullOrBlank()) {
+            coil.compose.AsyncImage(
+                model = p.iconUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+        } else {
+            Icon(
+                Icons.Default.Extension, null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(36.dp),
+            )
+        }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(p.name, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium,
@@ -316,6 +328,17 @@ private fun PluginRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
     ) {
+        if (!plugin.iconUrl.isNullOrBlank()) {
+            coil.compose.AsyncImage(
+                model = plugin.iconUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+            Spacer(Modifier.width(10.dp))
+        }
         Column(Modifier.weight(1f)) {
             Text(plugin.name, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)

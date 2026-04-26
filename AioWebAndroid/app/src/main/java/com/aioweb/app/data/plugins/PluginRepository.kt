@@ -183,6 +183,10 @@ class PluginRepository(private val context: Context) {
                 sourceRepoId = repo.id,
                 sourceUrl = plugin.downloadUrl,
                 installedAt = System.currentTimeMillis(),
+                iconUrl = plugin.iconUrl,
+                description = plugin.description,
+                authors = plugin.authors,
+                language = plugin.language,
             )
             // Replace any prior install of the SAME plugin from the SAME repo only.
             // (Plugins from different repos can legitimately share `internalName` —

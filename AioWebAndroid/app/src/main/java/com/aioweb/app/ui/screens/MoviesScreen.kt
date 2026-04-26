@@ -268,6 +268,7 @@ private fun SourceChipsRow(
             SourceChip(
                 label = p.name,
                 icon = Icons.Default.Extension,
+                logoUrl = p.iconUrl,
                 selected = selectedId == p.internalName,
                 onClick = { onSelect(p.internalName) },
             )
@@ -279,6 +280,7 @@ private fun SourceChipsRow(
 private fun SourceChip(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    logoUrl: String? = null,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -293,12 +295,23 @@ private fun SourceChip(
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
-        Icon(
-            icon, null,
-            tint = if (selected) MaterialTheme.colorScheme.onPrimary
-                   else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp),
-        )
+        if (!logoUrl.isNullOrBlank()) {
+            coil.compose.AsyncImage(
+                model = logoUrl,
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier
+                    .size(18.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+            )
+        } else {
+            Icon(
+                icon, null,
+                tint = if (selected) MaterialTheme.colorScheme.onPrimary
+                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
+        }
         Spacer(Modifier.width(6.dp))
         Text(
             label,

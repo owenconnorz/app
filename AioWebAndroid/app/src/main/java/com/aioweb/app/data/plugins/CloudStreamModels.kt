@@ -50,4 +50,8 @@ data class InstalledPlugin(
     val sourceRepoId: String,
     val sourceUrl: String,
     val installedAt: Long,
+    val iconUrl: String? = null,
+    val description: String? = null,
+    val authors: List<String>? = null,
+    val language: String? = null,
 )
