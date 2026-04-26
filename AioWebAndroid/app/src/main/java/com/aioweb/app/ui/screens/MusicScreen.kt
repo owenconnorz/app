@@ -10,6 +10,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -65,7 +67,14 @@ fun MusicScreen() {
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                     playerError = "Audio playback failed (${error.errorCodeName}): ${error.message}"
                 }
+                override fun onRepeatModeChanged(repeatMode: Int) { vm.setRepeatMode(repeatMode) }
+                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                    vm.setShuffle(shuffleModeEnabled)
+                }
             })
+            // Mirror initial state.
+            vm.setRepeatMode(controller.repeatMode)
+            vm.setShuffle(controller.shuffleModeEnabled)
             player = controller
             isPlaying = controller.isPlaying
         } catch (e: Exception) {
@@ -75,7 +84,9 @@ fun MusicScreen() {
     // NOTE: do NOT release the controller in onDispose — that would kill background playback.
     // The service holds the player; the controller is just a thin client.
 
-    val nowPlaying = state.tracks.firstOrNull { it.url == state.nowPlayingUrl }
+    val nowPlaying = state.nowPlayingTrack
+        ?: state.tracks.firstOrNull { it.url == state.nowPlayingUrl }
+        ?: state.homeFeed.firstOrNull { it.url == state.nowPlayingUrl }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         LazyColumn(
@@ -133,6 +144,38 @@ fun MusicScreen() {
             // Discovery chips when no query
             if (query.isBlank() && state.tracks.isEmpty()) {
                 item { SuggestionsRow(onPick = { query = it; vm.search(it) }) }
+
+                // ── Library shortcuts ───────────────────────────────────────────
+                if (state.liked.isNotEmpty()) {
+                    item { SectionTitle("Liked songs") }
+                    items(state.liked.take(5), key = { "lib_liked_${it.url}" }) { entity ->
+                        LibraryRow(entity, isPlaying = isPlaying && state.nowPlayingUrl == entity.url) {
+                            val track = YtTrack(
+                                title = entity.title, uploader = entity.artist,
+                                durationSec = entity.durationSec,
+                                url = entity.url, thumbnail = entity.thumbnail,
+                            )
+                            if (state.nowPlayingUrl == track.url && (player?.isPlaying == true)) player?.pause()
+                            else if (state.nowPlayingUrl == track.url) player?.play()
+                            else vm.play(track) { audioUrl -> player?.let { playTrack(it, track, audioUrl) } }
+                        }
+                    }
+                }
+                if (state.recent.isNotEmpty()) {
+                    item { SectionTitle("Recently played") }
+                    items(state.recent.take(8), key = { "lib_rec_${it.url}" }) { entity ->
+                        LibraryRow(entity, isPlaying = isPlaying && state.nowPlayingUrl == entity.url) {
+                            val track = YtTrack(
+                                title = entity.title, uploader = entity.artist,
+                                durationSec = entity.durationSec,
+                                url = entity.url, thumbnail = entity.thumbnail,
+                            )
+                            if (state.nowPlayingUrl == track.url && (player?.isPlaying == true)) player?.pause()
+                            else if (state.nowPlayingUrl == track.url) player?.play()
+                            else vm.play(track) { audioUrl -> player?.let { playTrack(it, track, audioUrl) } }
+                        }
+                    }
+                }
 
                 // Home feed (Trending music) — appears as soon as NewPipe returns it
                 if (state.homeFeed.isNotEmpty()) {
@@ -254,25 +297,42 @@ fun MusicScreen() {
             }
         }
 
+        // Now-Playing full sheet (lyrics + sleep timer + repeat/shuffle)
+        var showNowPlaying by remember { mutableStateOf(false) }
+
         // Mini player bar
         nowPlaying?.let { track ->
             MiniPlayer(
                 track = track,
                 isPlaying = isPlaying,
+                isLiked = state.isCurrentLiked,
                 onToggle = { if (player?.isPlaying == true) player?.pause() else player?.play() },
+                onLike = { vm.toggleLikeCurrent() },
+                onExpand = { showNowPlaying = true },
                 onSkipNext = {
                     val idx = state.tracks.indexOfFirst { it.url == track.url }
                     state.tracks.getOrNull(idx + 1)?.let { next ->
-                        vm.play(next) { audioUrl -> playTrack(player, next, audioUrl) }
+                        vm.play(next) { audioUrl -> player?.let { playTrack(it, next, audioUrl) } }
                     }
                 },
                 onSkipPrev = {
                     val idx = state.tracks.indexOfFirst { it.url == track.url }
                     state.tracks.getOrNull(idx - 1)?.let { prev ->
-                        vm.play(prev) { audioUrl -> playTrack(player, prev, audioUrl) }
+                        vm.play(prev) { audioUrl -> player?.let { playTrack(it, prev, audioUrl) } }
                     }
                 },
                 modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+        if (showNowPlaying && nowPlaying != null) {
+            NowPlayingSheet(
+                track = nowPlaying,
+                player = player,
+                state = state,
+                onDismiss = { showNowPlaying = false },
+                onSetSleepTimer = { mins -> vm.startSleepTimer(mins) { player?.pause() } },
+                onCancelSleepTimer = { vm.cancelSleepTimer() },
+                onLike = { vm.toggleLikeCurrent() },
             )
         }
     }
@@ -522,12 +582,65 @@ private fun SongRow(
 }
 
 @Composable
+private fun LibraryRow(
+    entity: com.aioweb.app.data.library.TrackEntity,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick)
+            .padding(8.dp),
+    ) {
+        Box(
+            Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            AsyncImage(
+                model = entity.thumbnail,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                entity.title, color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                entity.artist, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+            null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+@Composable
 private fun MiniPlayer(
     track: YtTrack,
     isPlaying: Boolean,
+    isLiked: Boolean,
     onToggle: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrev: () -> Unit,
+    onLike: () -> Unit,
+    onExpand: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -537,6 +650,7 @@ private fun MiniPlayer(
             .padding(horizontal = 8.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onExpand)
             .padding(horizontal = 8.dp, vertical = 8.dp),
     ) {
         Box(
@@ -563,6 +677,14 @@ private fun MiniPlayer(
                 track.uploader, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = onLike) {
+            Icon(
+                if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                if (isLiked) "Unlike" else "Like",
+                tint = if (isLiked) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         IconButton(onClick = onSkipPrev) {

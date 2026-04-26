@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization") version "1.9.24"
+    id("org.jetbrains.kotlin.kapt") version "1.9.24"
 }
 
 import java.util.Properties
@@ -160,4 +161,9 @@ dependencies {
 
     // WorkManager (download queue)
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // Room for Library (liked + recently played).
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
 }
