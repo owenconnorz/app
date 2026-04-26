@@ -8,9 +8,12 @@ import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.plugins.Plugin
 import dalvik.system.DexClassLoader
+import dalvik.system.DexFile
 import dalvik.system.PathClassLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -63,7 +66,9 @@ object PluginRuntime {
                 context.classLoader,
             )
             val pluginClassName = readPluginClassName(readOnlyFile)
-                ?: error("Could not find plugin class — no `Plugin-Class` in MANIFEST.MF")
+                ?: scanDexForPluginClass(readOnlyFile, optimizedDir, context.classLoader)
+                ?: error("Could not find plugin class in `$filePath` (no `manifest.json`, " +
+                    "no `Plugin-Class` in MANIFEST.MF, and no `Plugin` subclass found in dex).")
             val klass = loader.loadClass(pluginClassName)
             val instance = klass.getDeclaredConstructor().newInstance() as? Plugin
                 ?: error("Class `$pluginClassName` is not a subclass of `Plugin`")
@@ -80,8 +85,37 @@ object PluginRuntime {
         }
     }
 
+    @Serializable
+    private data class PluginManifest(
+        val pluginClassName: String? = null,
+        val name: String? = null,
+        val version: Int? = null,
+        val requiresResources: Boolean = false,
+    )
+
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    /**
+     * CloudStream plugins ship one of two metadata files:
+     *   1. `manifest.json` at the .cs3 root with `pluginClassName` (modern recloudstream)
+     *   2. `META-INF/MANIFEST.MF` with `Plugin-Class:` (legacy / Java JAR convention)
+     * We try both before falling back to dex scanning.
+     */
     private fun readPluginClassName(file: File): String? {
-        // 1. Look in MANIFEST.MF for `Plugin-Class:` attribute.
+        // 1. CloudStream's actual format: `manifest.json` at the JAR root.
+        try {
+            ZipFile(file).use { zf ->
+                val entry = zf.getEntry("manifest.json")
+                if (entry != null) {
+                    val body = zf.getInputStream(entry).bufferedReader().use { it.readText() }
+                    val mf = runCatching { json.decodeFromString(PluginManifest.serializer(), body) }.getOrNull()
+                    val name = mf?.pluginClassName?.takeIf { it.isNotBlank() }
+                    if (name != null) return name
+                }
+            }
+        } catch (_: Exception) { /* fall through */ }
+
+        // 2. JAR convention: `META-INF/MANIFEST.MF` with `Plugin-Class:` attribute.
         return try {
             ZipFile(file).use { zf ->
                 val entry = zf.getEntry("META-INF/MANIFEST.MF") ?: return null
@@ -92,6 +126,45 @@ object PluginRuntime {
                 }
             }
         } catch (_: Exception) { null }
+    }
+
+    /**
+     * Last-resort fallback: enumerate every class in the dex and pick the one that
+     * extends our [Plugin] base. Only used for legacy `.cs3` files that ship neither
+     * `manifest.json` nor `MANIFEST.MF` (rare but happens with old recloudstream forks).
+     *
+     * `DexFile` is technically deprecated since Android 8 but still functional and
+     * remains the only public API for this purpose without pulling in `dexlib2`.
+     */
+    @Suppress("DEPRECATION")
+    private fun scanDexForPluginClass(
+        readOnlyFile: File,
+        optimizedDir: File,
+        parent: ClassLoader,
+    ): String? {
+        return try {
+            val loader = DexClassLoader(
+                readOnlyFile.absolutePath,
+                optimizedDir.absolutePath,
+                null,
+                parent,
+            )
+            val dexFile = DexFile.loadDex(
+                readOnlyFile.absolutePath,
+                File(optimizedDir, readOnlyFile.name + ".odex").absolutePath,
+                0,
+            )
+            val pluginBase = Plugin::class.java
+            dexFile.entries().toList().firstOrNull { className ->
+                // Skip cloudstream3 stubs we ship in the host app.
+                if (className.startsWith("com.lagradost.cloudstream3.") &&
+                    !className.contains("plugin", ignoreCase = true)) return@firstOrNull false
+                runCatching {
+                    val c = loader.loadClass(className)
+                    pluginBase.isAssignableFrom(c) && !java.lang.reflect.Modifier.isAbstract(c.modifiers)
+                }.getOrDefault(false)
+            }
+        } catch (_: Throwable) { null }
     }
 
     suspend fun search(context: Context, filePath: String, query: String): List<SearchResponse> {
