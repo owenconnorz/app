@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,12 +51,14 @@ fun MusicScreen() {
     val vm: MusicViewModel = viewModel(factory = MusicViewModel.factory(context))
     val state by vm.state.collectAsState()
     var query by remember { mutableStateOf("") }
+    var showFullPlayer by remember { mutableStateOf(false) }
 
     val player = remember {
         buildMusicExoPlayer(context)
     }
     var isPlaying by remember { mutableStateOf(false) }
     var playerError by remember { mutableStateOf<String?>(null) }
+    
     DisposableEffect(player) {
         val l = object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
@@ -68,213 +71,325 @@ fun MusicScreen() {
     }
 
     val nowPlaying = state.tracks.firstOrNull { it.url == state.nowPlayingUrl }
+        ?: state.homeFeed.firstOrNull { it.url == state.nowPlayingUrl }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = if (nowPlaying != null) 96.dp else 12.dp),
-        ) {
-            item { MusicHeader() }
-            item {
-                MusicSearchField(
-                    query = query,
-                    loading = state.loading,
-                    onQueryChange = { query = it },
-                )
-                LaunchedEffect(query) {
-                    if (query.length >= 2) {
-                        kotlinx.coroutines.delay(400)
-                        vm.search(query)
-                    }
+    if (showFullPlayer && nowPlaying != null) {
+        FullScreenPlayer(
+            track = nowPlaying,
+            isPlaying = isPlaying,
+            player = player,
+            onClose = { showFullPlayer = false },
+            onSkipNext = {
+                val allTracks = (state.tracks.takeIf { it.isNotEmpty() } ?: state.homeFeed)
+                val idx = allTracks.indexOfFirst { it.url == nowPlaying.url }
+                allTracks.getOrNull(idx + 1)?.let { next ->
+                    vm.play(next) { audioUrl -> playTrack(player, next, audioUrl) }
+                }
+            },
+            onSkipPrev = {
+                val allTracks = (state.tracks.takeIf { it.isNotEmpty() } ?: state.homeFeed)
+                val idx = allTracks.indexOfFirst { it.url == nowPlaying.url }
+                allTracks.getOrNull(idx - 1)?.let { prev ->
+                    vm.play(prev) { audioUrl -> playTrack(player, prev, audioUrl) }
                 }
             }
-            // Surface BOTH the ViewModel's error (e.g. NewPipe extraction failed) and the
-            // ExoPlayer's playback error in a prominent banner — this is critical for
-            // debugging "music won't play" without the user having to scroll.
-            val combinedError = state.error ?: playerError
-            if (combinedError != null) {
+        )
+    } else {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = if (nowPlaying != null) 96.dp else 12.dp),
+            ) {
+                item { MusicHeader() }
                 item {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.errorContainer)
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Default.Search,
-                            null,
-                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            combinedError,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(onClick = { playerError = null; vm.search(query) }) {
-                            Text("Dismiss")
+                    MusicSearchField(
+                        query = query,
+                        loading = state.loading,
+                        onQueryChange = { query = it },
+                    )
+                    LaunchedEffect(query) {
+                        if (query.length >= 2) {
+                            kotlinx.coroutines.delay(400)
+                            vm.search(query)
                         }
                     }
                 }
-            }
+                
+                val combinedError = state.error ?: playerError
+                if (combinedError != null) {
+                    item {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.errorContainer)
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Default.Search,
+                                null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                combinedError,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { playerError = null; vm.search(query) }) {
+                                Text("Dismiss")
+                            }
+                        }
+                    }
+                }
 
-            // Discovery chips when no query
-            if (query.isBlank() && state.tracks.isEmpty()) {
-                item { SuggestionsRow(onPick = { query = it; vm.search(it) }) }
+                if (query.isBlank() && state.tracks.isEmpty()) {
+                    item { SuggestionsRow(onPick = { query = it; vm.search(it) }) }
 
-                // Home feed (Trending music) — appears as soon as NewPipe returns it
-                if (state.homeFeed.isNotEmpty()) {
-                    item { SectionTitle("Trending today") }
+                    if (state.homeFeed.isNotEmpty()) {
+                        item { SectionTitle("Trending today") }
+                        item {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                items(state.homeFeed.take(10), key = { "home_${it.url}" }) { track ->
+                                    HeroCard(
+                                        track = track,
+                                        isPlaying = isPlaying && state.nowPlayingUrl == track.url,
+                                        onClick = {
+                                            if (state.nowPlayingUrl == track.url && player.isPlaying) player.pause()
+                                            else if (state.nowPlayingUrl == track.url) player.play()
+                                            else vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        item { SectionTitle("More from YouTube") }
+                        items(state.homeFeed.drop(10), key = { "homerow_${it.url}" }) { track ->
+                            SongRow(
+                                track = track,
+                                nowPlayingUrl = state.nowPlayingUrl,
+                                isPlaying = isPlaying && state.nowPlayingUrl == track.url,
+                                loading = state.resolvingUrl == track.url,
+                                onClick = {
+                                    if (state.nowPlayingUrl == track.url && player.isPlaying) player.pause()
+                                    else if (state.nowPlayingUrl == track.url) player.play()
+                                    else vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                }
+                            )
+                        }
+                    } else if (state.homeLoading) {
+                        item {
+                            Box(
+                                Modifier.fillMaxWidth().padding(40.dp),
+                                contentAlignment = Alignment.Center,
+                            ) { CircularProgressIndicator() }
+                        }
+                    } else {
+                        item {
+                            Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(
+                                    Modifier.size(96.dp).clip(CircleShape).background(
+                                        Brush.linearGradient(
+                                            listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
+                                        )
+                                    ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(40.dp))
+                                }
+                                Spacer(Modifier.height(16.dp))
+                                Text("Tap a vibe or search", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onBackground)
+                                Text("Stream from YouTube · audio only", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+
+                if (state.tracks.isNotEmpty()) {
+                    item {
+                        SectionTitle("Top results")
+                    }
                     item {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            items(state.homeFeed.take(10), key = { "home_${it.url}" }) { track ->
+                            items(state.tracks.take(6), key = { "hero_${it.url}" }) { track ->
                                 HeroCard(
                                     track = track,
                                     isPlaying = isPlaying && state.nowPlayingUrl == track.url,
                                     onClick = {
-                                        if (state.nowPlayingUrl == track.url && player.isPlaying) player.pause()
-                                        else if (state.nowPlayingUrl == track.url) player.play()
-                                        else vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                        if (state.nowPlayingUrl == track.url && player.isPlaying) {
+                                            player.pause()
+                                        } else if (state.nowPlayingUrl == track.url) {
+                                            player.play()
+                                        } else {
+                                            vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                        }
                                     }
                                 )
                             }
                         }
                     }
-                    item { SectionTitle("More from YouTube") }
-                    items(state.homeFeed.drop(10), key = { "homerow_${it.url}" }) { track ->
+                    item { SectionTitle("All songs") }
+                    items(state.tracks.drop(6), key = { it.url }) { track ->
                         SongRow(
                             track = track,
                             nowPlayingUrl = state.nowPlayingUrl,
                             isPlaying = isPlaying && state.nowPlayingUrl == track.url,
                             loading = state.resolvingUrl == track.url,
                             onClick = {
-                                if (state.nowPlayingUrl == track.url && player.isPlaying) player.pause()
-                                else if (state.nowPlayingUrl == track.url) player.play()
-                                else vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                if (state.nowPlayingUrl == track.url && player.isPlaying) {
+                                    player.pause()
+                                } else if (state.nowPlayingUrl == track.url) {
+                                    player.play()
+                                } else {
+                                    vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                }
                             }
                         )
                     }
-                } else if (state.homeLoading) {
-                    item {
-                        Box(
-                            Modifier.fillMaxWidth().padding(40.dp),
-                            contentAlignment = Alignment.Center,
-                        ) { CircularProgressIndicator() }
-                    }
-                } else {
-                    item {
-                        Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(
-                                Modifier.size(96.dp).clip(CircleShape).background(
-                                    Brush.linearGradient(
-                                        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
-                                    )
-                                ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(40.dp))
-                            }
-                            Spacer(Modifier.height(16.dp))
-                            Text("Tap a vibe or search", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onBackground)
-                            Text("Stream from YouTube · audio only", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
                 }
             }
 
-            // Top results — Hero cards (first 6 tracks)
-            if (state.tracks.isNotEmpty()) {
-                item {
-                    SectionTitle("Top results")
-                }
-                item {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        items(state.tracks.take(6), key = { "hero_${it.url}" }) { track ->
-                            HeroCard(
-                                track = track,
-                                isPlaying = isPlaying && state.nowPlayingUrl == track.url,
-                                onClick = {
-                                    if (state.nowPlayingUrl == track.url && player.isPlaying) {
-                                        player.pause()
-                                    } else if (state.nowPlayingUrl == track.url) {
-                                        player.play()
-                                    } else {
-                                        vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
-                                    }
-                                }
-                            )
+            nowPlaying?.let { track ->
+                MiniPlayer(
+                    track = track,
+                    isPlaying = isPlaying,
+                    onToggle = { if (player.isPlaying) player.pause() else player.play() },
+                    onExpand = { showFullPlayer = true },
+                    onSkipNext = {
+                        val allTracks = (state.tracks.takeIf { it.isNotEmpty() } ?: state.homeFeed)
+                        val idx = allTracks.indexOfFirst { it.url == track.url }
+                        allTracks.getOrNull(idx + 1)?.let { next ->
+                            vm.play(next) { audioUrl -> playTrack(player, next, audioUrl) }
                         }
-                    }
-                }
-                item { SectionTitle("All songs") }
-                items(state.tracks.drop(6), key = { it.url }) { track ->
-                    SongRow(
-                        track = track,
-                        nowPlayingUrl = state.nowPlayingUrl,
-                        isPlaying = isPlaying && state.nowPlayingUrl == track.url,
-                        loading = state.resolvingUrl == track.url,
-                        onClick = {
-                            if (state.nowPlayingUrl == track.url && player.isPlaying) {
-                                player.pause()
-                            } else if (state.nowPlayingUrl == track.url) {
-                                player.play()
-                            } else {
-                                vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
-                            }
+                    },
+                    onSkipPrev = {
+                        val allTracks = (state.tracks.takeIf { it.isNotEmpty() } ?: state.homeFeed)
+                        val idx = allTracks.indexOfFirst { it.url == track.url }
+                        allTracks.getOrNull(idx - 1)?.let { prev ->
+                            vm.play(prev) { audioUrl -> playTrack(player, prev, audioUrl) }
                         }
-                    )
-                }
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
             }
-            state.error?.let {
-                item {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(20.dp),
-                    )
-                }
-            }
-        }
-
-        // Mini player bar
-        nowPlaying?.let { track ->
-            MiniPlayer(
-                track = track,
-                isPlaying = isPlaying,
-                onToggle = { if (player.isPlaying) player.pause() else player.play() },
-                onSkipNext = {
-                    val idx = state.tracks.indexOfFirst { it.url == track.url }
-                    state.tracks.getOrNull(idx + 1)?.let { next ->
-                        vm.play(next) { audioUrl -> playTrack(player, next, audioUrl) }
-                    }
-                },
-                onSkipPrev = {
-                    val idx = state.tracks.indexOfFirst { it.url == track.url }
-                    state.tracks.getOrNull(idx - 1)?.let { prev ->
-                        vm.play(prev) { audioUrl -> playTrack(player, prev, audioUrl) }
-                    }
-                },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
         }
     }
 }
 
-/**
- * Build an ExoPlayer with a Chrome-like User-Agent and Range-request support.
- * googlevideo.com sometimes serves 403 to ExoPlayer's default UA, so we mirror
- * what the YouTube web client sends.
- */
+@Composable
+private fun FullScreenPlayer(
+    track: YtTrack,
+    isPlaying: Boolean,
+    player: ExoPlayer,
+    onClose: () -> Unit,
+    onSkipNext: () -> Unit,
+    onSkipPrev: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                        MaterialTheme.colorScheme.background
+                    )
+                )
+            )
+    ) {
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(16.dp)
+        ) {
+            Icon(Icons.Default.ExpandLess, "Collapse", tint = Color.White, modifier = Modifier.size(28.dp))
+        }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                Modifier
+                    .size(280.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                AsyncImage(
+                    model = track.thumbnail,
+                    contentDescription = track.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            Spacer(Modifier.height(48.dp))
+            Text(
+                track.title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                track.uploader,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White.copy(alpha = 0.7f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(32.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onSkipPrev, modifier = Modifier.size(56.dp)) {
+                Icon(Icons.Default.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(32.dp))
+            }
+            
+            Box(
+                Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .clickable { if (player.isPlaying) player.pause() else player.play() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    if (isPlaying) "Pause" else "Play",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+            
+            IconButton(onClick = onSkipNext, modifier = Modifier.size(56.dp)) {
+                Icon(Icons.Default.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(32.dp))
+            }
+        }
+    }
+}
+
 @OptIn(androidx.media3.common.util.UnstableApi::class)
 private fun buildMusicExoPlayer(context: android.content.Context): ExoPlayer {
     val httpFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
@@ -410,7 +525,6 @@ private fun HeroCard(track: YtTrack, isPlaying: Boolean, onClick: () -> Unit) {
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-            // Play overlay
             Box(
                 Modifier
                     .padding(8.dp)
@@ -517,6 +631,7 @@ private fun MiniPlayer(
     track: YtTrack,
     isPlaying: Boolean,
     onToggle: () -> Unit,
+    onExpand: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrev: () -> Unit,
     modifier: Modifier = Modifier,
@@ -528,6 +643,7 @@ private fun MiniPlayer(
             .padding(horizontal = 8.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onExpand)
             .padding(horizontal = 8.dp, vertical = 8.dp),
     ) {
         Box(
