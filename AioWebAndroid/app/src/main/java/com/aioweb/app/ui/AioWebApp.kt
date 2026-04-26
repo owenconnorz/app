@@ -130,10 +130,11 @@ fun AioWebApp() {
                     MovieDetailScreen(
                         movieId = it.arguments!!.getLong("id"),
                         onBack = { nav.popBackStack() },
-                        onPlayUrl = { url, title ->
-                            val u = URLEncoder.encode(url, "UTF-8")
+                        onPlay = { initialUrl, title, sources ->
+                            com.aioweb.app.player.MoviePlayerSession.set(sources)
+                            val u = URLEncoder.encode(initialUrl, "UTF-8")
                             val t = URLEncoder.encode(title, "UTF-8")
-                            nav.navigate("player/url/$u/$t")
+                            nav.navigate("player/movie/$u/$t")
                         },
                     )
                 }
@@ -192,6 +193,37 @@ fun AioWebApp() {
                     NativePlayerScreen(
                         streamUrl = url,
                         title = title,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                // Stremio-resolved movie player — pulls the full source list from MoviePlayerSession
+                // so the in-player "Sources" button can swap streams without leaving the player.
+                composable(
+                    "player/movie/{url}/{title}",
+                    arguments = listOf(
+                        navArgument("url")   { type = NavType.StringType },
+                        navArgument("title") { type = NavType.StringType },
+                    )
+                ) { entry ->
+                    val initial = URLDecoder.decode(entry.arguments!!.getString("url")!!, "UTF-8")
+                    val title = URLDecoder.decode(entry.arguments!!.getString("title")!!, "UTF-8")
+                    val sources = com.aioweb.app.player.MoviePlayerSession.sources
+                    var currentUrl by remember(initial) { mutableStateOf(initial) }
+                    var currentId by remember(initial) {
+                        mutableStateOf(sources.firstOrNull { it.url == initial }?.id)
+                    }
+                    val active = sources.firstOrNull { it.id == currentId }
+                    val subtitle = active?.let { "${it.addonName}${it.qualityTag?.let { q -> " · $q" } ?: ""}" }
+                    NativePlayerScreen(
+                        streamUrl = currentUrl,
+                        title = title,
+                        subtitle = subtitle,
+                        sources = sources,
+                        selectedSourceId = currentId,
+                        onSwitchSource = { src ->
+                            currentUrl = src.url
+                            currentId = src.id
+                        },
                         onBack = { nav.popBackStack() },
                     )
                 }

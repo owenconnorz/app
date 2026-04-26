@@ -11,14 +11,25 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
+import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -74,6 +85,16 @@ fun NativePlayerScreen(
     title: String,
     headers: Map<String, String> = emptyMap(),
     onBack: () -> Unit,
+    /** Subtitle line under the title (e.g. "Torrentio · 1080p"). */
+    subtitle: String? = null,
+    /** Optional: full stream catalog. When non-empty, the player shows a "Sources" pill
+     *  that opens a switcher sheet so the user can change source mid-playback. */
+    sources: List<PlayerSource> = emptyList(),
+    /** Currently selected source id — drives the "selected" highlight in the sheet. */
+    selectedSourceId: String? = null,
+    /** Called with a different source id when the user picks a new stream. The host
+     *  is expected to swap [streamUrl]/[subtitle] and re-enter the composition. */
+    onSwitchSource: ((PlayerSource) -> Unit)? = null,
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -246,100 +267,139 @@ fun NativePlayerScreen(
         }
 
         // --- Overlay (top bar + center play + bottom bar) — only for ExoPlayer mode ----------
+        var locked by remember { mutableStateOf(false) }
+        var showSourcesSheet by remember { mutableStateOf(false) }
+
         AnimatedVisibility(
             visible = controlsVisible && !needsWebView,
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            Column(Modifier.fillMaxSize()) {
-                // Top scrim + back + title
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent))
-                        )
-                        .padding(top = 12.dp, start = 8.dp, end = 16.dp, bottom = 24.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
-                        }
-                        Spacer(Modifier.width(4.dp))
+            Box(Modifier.fillMaxSize()) {
+                if (!locked) {
+                    // ── Top-LEFT: title + subtitle ─────────────────────────────────
+                    Column(
+                        Modifier
+                            .align(Alignment.TopStart)
+                            .padding(start = 28.dp, top = 22.dp, end = 220.dp),
+                    ) {
                         Text(
                             title,
                             color = Color.White,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
+                            style = MaterialTheme.typography.headlineSmall,
+                            maxLines = 2,
                         )
+                        if (!subtitle.isNullOrBlank()) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                subtitle,
+                                color = Color.White.copy(alpha = 0.7f),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
                 }
-                Spacer(Modifier.weight(1f))
-                // Center play/pause + skip buttons
+                // ── Top-RIGHT: lock + back as dark capsule pills ───────────────────
                 Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 14.dp, top = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    NuvioCircleIcon(Icons.Default.Replay10, "Rewind 10s") {
-                        ex?.seekTo((ex.currentPosition - 10_000L).coerceAtLeast(0L))
-                        bumpInteraction()
-                    }
-                    Spacer(Modifier.width(36.dp))
-                    NuvioCircleIcon(
-                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        if (isPlaying) "Pause" else "Play",
-                        big = true,
-                    ) {
-                        ex ?: return@NuvioCircleIcon
-                        if (ex.isPlaying) ex.pause() else ex.play()
-                        bumpInteraction()
-                    }
-                    Spacer(Modifier.width(36.dp))
-                    NuvioCircleIcon(Icons.Default.Forward10, "Forward 10s") {
-                        ex?.seekTo((ex.currentPosition + 10_000L).coerceAtMost(durationMs))
-                        bumpInteraction()
+                    PlayerCapsuleIcon(
+                        icon = if (locked) androidx.compose.material.icons.Icons.Default.LockOpen
+                               else androidx.compose.material.icons.Icons.Default.Lock,
+                        contentDescription = if (locked) "Unlock" else "Lock controls",
+                        onClick = { locked = !locked; bumpInteraction() },
+                    )
+                    if (!locked) {
+                        PlayerCapsuleIcon(
+                            icon = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            onClick = onBack,
+                        )
                     }
                 }
-                Spacer(Modifier.weight(1f))
-                // Bottom scrim + progress + times
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))
-                        )
-                        .padding(horizontal = 16.dp, vertical = 14.dp)
-                ) {
-                    Slider(
-                        value = if (durationMs > 0) positionMs / durationMs.toFloat() else 0f,
-                        onValueChange = { v ->
-                            ex?.seekTo((v * durationMs).toLong())
-                            bumpInteraction()
-                        },
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color.White,
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.25f),
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+
+                if (!locked) {
+                    // ── Center: ⏮10 / ▶ / ⏭10 — outlined white, no scrim ─────────
                     Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        Modifier.align(Alignment.Center),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(56.dp),
                     ) {
-                        Text(
-                            formatTime(positionMs),
-                            color = Color.White, style = MaterialTheme.typography.bodyMedium,
+                        OutlinedPlayIcon(Icons.Default.Replay10, "Rewind 10s") {
+                            ex?.seekTo((ex.currentPosition - 10_000L).coerceAtLeast(0L))
+                            bumpInteraction()
+                        }
+                        OutlinedPlayIcon(
+                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            if (isPlaying) "Pause" else "Play",
+                            big = true,
+                        ) {
+                            ex ?: return@OutlinedPlayIcon
+                            if (ex.isPlaying) ex.pause() else ex.play()
+                            bumpInteraction()
+                        }
+                        OutlinedPlayIcon(Icons.Default.Forward10, "Forward 10s") {
+                            ex?.seekTo((ex.currentPosition + 10_000L).coerceAtMost(durationMs))
+                            bumpInteraction()
+                        }
+                    }
+
+                    // ── Bottom: chip-pill timestamps + slider + toolbar pill ──────
+                    Column(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(horizontal = 28.dp, vertical = 22.dp),
+                    ) {
+                        Slider(
+                            value = if (durationMs > 0) positionMs / durationMs.toFloat() else 0f,
+                            onValueChange = { v ->
+                                ex?.seekTo((v * durationMs).toLong())
+                                bumpInteraction()
+                            },
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.30f),
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
                         )
-                        Text(
-                            formatTime(durationMs),
-                            color = Color.White.copy(alpha = 0.7f),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            TimestampChip(formatTime(positionMs))
+                            TimestampChip(formatTime(durationMs))
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            PlayerToolbarPill(
+                                onSourcesClick = if (sources.isNotEmpty())
+                                    { -> showSourcesSheet = true; bumpInteraction() }
+                                else null,
+                            )
+                        }
                     }
                 }
             }
+        }
+
+        if (showSourcesSheet) {
+            SourcesPickerSheet(
+                sources = sources,
+                selectedSourceId = selectedSourceId,
+                onPick = { src ->
+                    showSourcesSheet = false
+                    onSwitchSource?.invoke(src)
+                },
+                onDismiss = { showSourcesSheet = false },
+            )
         }
 
         // --- Top bar for WebView mode (just back button + title) -----------------------------
@@ -415,6 +475,238 @@ private fun NuvioCircleIcon(
         Icon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(iconSize))
     }
 }
+
+@Composable
+private fun OutlinedPlayIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    big: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val size = if (big) 84.dp else 60.dp
+    val iconSize = if (big) 48.dp else 32.dp
+    Box(
+        Modifier
+            .size(size)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(iconSize))
+    }
+}
+
+@Composable
+private fun PlayerCapsuleIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(width = 64.dp, height = 44.dp)
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.55f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+private fun TimestampChip(text: String) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.55f))
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+    ) {
+        Text(text, color = Color.White, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
+private fun PlayerToolbarPill(onSourcesClick: (() -> Unit)?) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.55f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ToolbarItem(Icons.Default.AspectRatio, "Fit") { /* TODO: cycle resize mode */ }
+        ToolbarItem(Icons.Default.Speed, "1x") { /* TODO: speed picker */ }
+        ToolbarItem(Icons.Default.ClosedCaption, "Subs") { /* TODO: subtitle picker */ }
+        ToolbarItem(Icons.Default.VolumeUp, "Audio") { /* TODO: audio track picker */ }
+        ToolbarItem(
+            Icons.AutoMirrored.Filled.CompareArrows,
+            "Sources",
+            enabled = onSourcesClick != null,
+        ) { onSourcesClick?.invoke() }
+    }
+}
+
+@Composable
+private fun ToolbarItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val tint = if (enabled) Color.White else Color.White.copy(alpha = 0.35f)
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, label, tint = tint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label, color = tint, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SourcesPickerSheet(
+    sources: List<PlayerSource>,
+    selectedSourceId: String?,
+    onPick: (PlayerSource) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val addonFilters = remember(sources) {
+        listOf("All") + sources.map { it.addonName }.distinct()
+    }
+    var activeFilter by remember(sources) { mutableStateOf("All") }
+    val filtered = remember(activeFilter, sources) {
+        if (activeFilter == "All") sources else sources.filter { it.addonName == activeFilter }
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF111111),
+        scrimColor = Color.Black.copy(alpha = 0.7f),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            // Header: Reload (left) — title (center) — Close (right)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { /* TODO: re-resolve from caller */ }) {
+                    Icon(Icons.Default.Refresh, "Reload", tint = Color.White)
+                }
+                Text(
+                    "Streams",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f).padding(start = 8.dp),
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.Default.Close,
+                        "Close",
+                        tint = Color.White,
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            // Addon filter chip row
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+            ) {
+                items(
+                    addonFilters,
+                    key = { it },
+                ) { name ->
+                    SourceFilterChip(name, name == activeFilter) { activeFilter = name }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.foundation.lazy.LazyColumn(
+                Modifier.fillMaxWidth().heightIn(max = 460.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+                items(filtered, key = { it.id }) { src ->
+                    StreamPickerRow(
+                        src = src,
+                        selected = src.id == selectedSourceId,
+                        onClick = { onPick(src) },
+                    )
+                }
+                if (filtered.isEmpty()) {
+                    item {
+                        Text(
+                            "No streams from $activeFilter.",
+                            color = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(20.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceFilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(
+                if (selected) Color.White
+                else Color.White.copy(alpha = 0.12f)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Text(
+            label,
+            color = if (selected) Color.Black else Color.White,
+            style = MaterialTheme.typography.labelLarge,
+        )
+    }
+}
+
+@Composable
+private fun StreamPickerRow(src: PlayerSource, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (selected) Color.White.copy(alpha = 0.18f)
+                else Color.White.copy(alpha = 0.06f)
+            )
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+    ) {
+        Icon(
+            if (src.isMagnet) Icons.Default.Bolt
+            else Icons.Default.PlayArrow,
+            null,
+            tint = if (selected) MaterialTheme.colorScheme.primary else Color.White,
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                src.label,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 3,
+            )
+            Text(
+                "${src.addonName} · ${if (src.isMagnet) "Torrent" else "Direct"}" +
+                    (src.qualityTag?.let { " · $it" } ?: ""),
+                color = Color.White.copy(alpha = 0.65f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
 
 private fun formatTime(ms: Long): String {
     if (ms <= 0) return "0:00"
