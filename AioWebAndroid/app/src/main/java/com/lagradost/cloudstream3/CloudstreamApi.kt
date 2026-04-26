@@ -26,6 +26,12 @@ enum class DubStatus { Subbed, Dubbed, None }
 enum class ShowStatus { Completed, Ongoing, OnHiatus, Cancelled }
 enum class SearchQuality { HD, FHD, BluRay, UHD, FourK, SD, CamRip, Cam, HDR, DVD, WebRip, HDCam }
 
+/** Plugin VPN requirement — many Cloudstream plugins reference this enum. */
+enum class VPNStatus { None, MightBeNeeded, Torrent }
+
+/** Plugin general status — referenced by some recloudstream plugins. */
+enum class ProviderType { MetaProvider, DirectProvider }
+
 // ────────────────────────── search responses ──────────────────────────
 
 open class SearchResponse(
@@ -264,6 +270,11 @@ abstract class MainAPI {
     open var hasDownloadSupport: Boolean = true
     open var supportedTypes: Set<TvType> = setOf(TvType.Movie, TvType.TvSeries)
     open var mainPage: List<MainPageRequest> = emptyList()
+    open var providerType: ProviderType = ProviderType.DirectProvider
+    open var vpnStatus: VPNStatus = VPNStatus.None
+    open var sequentialMainPage: Boolean = false
+    open var sequentialMainPageDelay: Long = 0L
+    open var sequentialMainPageScrollDelay: Long = 0L
 
     open suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? = null
 

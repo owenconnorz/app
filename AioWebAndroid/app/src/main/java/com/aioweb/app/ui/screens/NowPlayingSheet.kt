@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -104,17 +105,23 @@ fun NowPlayingSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Color.Transparent,
-        scrimColor = Color.Transparent,
+        containerColor = Color(0xFF0E0E0E),
+        scrimColor = Color.Black.copy(alpha = 0.6f),
         dragHandle = null,
         modifier = Modifier.fillMaxSize(),
     ) {
         Box(
             Modifier
                 .fillMaxSize()
+                .background(Color(0xFF0E0E0E))   // solid base — no leak-through
                 .background(
                     Brush.verticalGradient(
-                        listOf(animDominant.copy(alpha = 0.95f), animDominant.copy(alpha = 0.55f), Color(0xFF161616)),
+                        // All stops fully opaque, just darker as you scroll down.
+                        listOf(
+                            animDominant,
+                            animDominant.copy(alpha = 0.55f).compositeOver(Color(0xFF161616)),
+                            Color(0xFF0E0E0E),
+                        ),
                     )
                 )
         ) {
@@ -146,18 +153,23 @@ fun NowPlayingSheet(
 
                 Spacer(Modifier.height(12.dp))
 
-                // Wide artwork (16:9 with rounded corners + shadow)
-                AsyncImage(
-                    model = track.thumbnail,
-                    contentDescription = track.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(16f / 10f)
-                        .shadow(20.dp, RoundedCornerShape(16.dp))
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.Black.copy(alpha = 0.25f)),
-                )
+                // Square (1:1) artwork — Metrolist's exact size — with rounded corners + soft shadow.
+                Box(
+                    Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AsyncImage(
+                        model = track.thumbnail,
+                        contentDescription = track.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth(0.92f)
+                            .aspectRatio(1f)
+                            .shadow(20.dp, RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.Black.copy(alpha = 0.25f)),
+                    )
+                }
 
                 Spacer(Modifier.height(20.dp))
 

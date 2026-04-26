@@ -43,21 +43,24 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            val ksPath = System.getenv("KEYSTORE_PATH") ?: keystoreProps["storeFile"]?.toString()
-            val ksPassword = System.getenv("KEYSTORE_PASSWORD") ?: keystoreProps["storePassword"]?.toString()
-            val ksKeyAlias = System.getenv("KEY_ALIAS") ?: keystoreProps["keyAlias"]?.toString()
-            val ksKeyPassword = System.getenv("KEY_PASSWORD") ?: keystoreProps["keyPassword"]?.toString()
+        // Fallback debug-style keystore committed at AioWebAndroid/streamcloud-debug.jks.
+        // Successive CI builds use the same key, so the in-app updater can install updates
+        // over previous releases. Anyone can replace it by setting KEYSTORE_PATH (or
+        // KEYSTORE_BASE64 in CI) to a real release keystore.
+        val fallbackKs = rootProject.file("streamcloud-debug.jks")
 
-            if (ksPath != null && file(ksPath).exists() && ksPassword != null && ksKeyAlias != null && ksKeyPassword != null) {
-                storeFile = file(ksPath)
-                storePassword = ksPassword
-                keyAlias = ksKeyAlias
-                keyPassword = ksKeyPassword
-                enableV1Signing = true
-                enableV2Signing = true
-                enableV3Signing = true
-            }
+        create("release") {
+            val ksPathEnv = System.getenv("KEYSTORE_PATH") ?: keystoreProps["storeFile"]?.toString()
+            val ksPath = ksPathEnv?.let { file(it) }?.takeIf { it.exists() } ?: fallbackKs
+            val realKey = ksPathEnv != null && ksPath.absolutePath == ksPathEnv
+
+            storeFile = ksPath
+            storePassword = if (realKey) System.getenv("KEYSTORE_PASSWORD") ?: keystoreProps["storePassword"]?.toString() else "streamcloud"
+            keyAlias = if (realKey) System.getenv("KEY_ALIAS") ?: keystoreProps["keyAlias"]?.toString() else "streamcloud-debug"
+            keyPassword = if (realKey) System.getenv("KEY_PASSWORD") ?: keystoreProps["keyPassword"]?.toString() else "streamcloud"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
@@ -65,19 +68,15 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            val rel = signingConfigs.getByName("release")
-            if (rel.storeFile != null) signingConfig = rel
+            // Always sign release — fallback keystore guarantees this works even with no secrets.
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             isDebuggable = true
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            // Use the release keystore for debug too when available, so successive CI debug builds
-            // can update each other on the device (otherwise random debug.keystore per CI run breaks updates).
-            val rel = signingConfigs.findByName("release")
-            if (rel != null && rel.storeFile != null) {
-                signingConfig = rel
-            }
+            // Reuse the same keystore so each successive CI debug build can update the previous.
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

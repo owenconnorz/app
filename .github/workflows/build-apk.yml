@@ -72,35 +72,38 @@ jobs:
           fi
           exit 0
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Build Release APK (signed if secrets present)
-        continue-on-error: true
-        env:
-          KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Build Debug + Release APKs (release auto-signed via streamcloud-debug.jks fallback)
+        run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
 
       - name: Collect APK artifacts
         run: |
           mkdir -p artifacts
           cp app/build/outputs/apk/debug/app-debug.apk \
-             "artifacts/AioWeb-debug-${{ github.run_number }}.apk" || true
+             "artifacts/StreamCloud-debug-${{ github.run_number }}.apk" || true
           if [ -f app/build/outputs/apk/release/app-release.apk ]; then
             cp app/build/outputs/apk/release/app-release.apk \
-               "artifacts/AioWeb-release-signed-${{ github.run_number }}.apk"
+               "artifacts/StreamCloud-release-${{ github.run_number }}.apk"
           elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
             cp app/build/outputs/apk/release/app-release-unsigned.apk \
-               "artifacts/AioWeb-release-UNSIGNED-${{ github.run_number }}.apk"
+               "artifacts/StreamCloud-release-UNSIGNED-${{ github.run_number }}.apk"
           fi
           ls -la artifacts/
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: AioWeb-apks
+          name: StreamCloud-apks
           path: AioWebAndroid/artifacts/*.apk
           retention-days: 30
+
+      # ---------- Publish a GitHub Release with the signed release APK ----------
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: StreamCloud build ${{ github.run_number }}
+          files: AioWebAndroid/artifacts/StreamCloud-release-${{ github.run_number }}.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
