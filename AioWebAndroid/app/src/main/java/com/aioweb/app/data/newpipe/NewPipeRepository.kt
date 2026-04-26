@@ -1,5 +1,6 @@
 package com.aioweb.app.data.newpipe
 
+import com.aioweb.app.data.util.hqYtThumb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
@@ -40,7 +41,7 @@ object NewPipeRepository {
                     uploader = item.uploaderName ?: "",
                     durationSec = item.duration,
                     url = item.url ?: return@mapNotNull null,
-                    thumbnail = item.thumbnails?.firstOrNull()?.url,
+                    thumbnail = item.thumbnails?.lastOrNull()?.url?.hqYtThumb(720),
                 )
             } catch (_: Exception) { null }
         }
@@ -64,7 +65,7 @@ object NewPipeRepository {
                     uploader = item.uploaderName ?: "",
                     durationSec = item.duration,
                     url = item.url ?: return@mapNotNull null,
-                    thumbnail = item.thumbnails?.firstOrNull()?.url,
+                    thumbnail = item.thumbnails?.lastOrNull()?.url?.hqYtThumb(720),
                 )
             } catch (_: Exception) { null }
         }

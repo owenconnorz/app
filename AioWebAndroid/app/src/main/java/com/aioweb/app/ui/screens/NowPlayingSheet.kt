@@ -1,6 +1,9 @@
 package com.aioweb.app.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,36 +13,57 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
+import androidx.palette.graphics.Palette
 import coil.compose.AsyncImage
+import coil.request.SuccessResult
 import com.aioweb.app.data.newpipe.YtTrack
 import com.aioweb.app.ui.viewmodel.MusicState
 import kotlinx.coroutines.delay
 
 /**
- * Full-screen "Now Playing" — replaces Metrolist's bottom sheet.
- * Shows artwork, lyrics (synced or plain), seek bar, repeat/shuffle, sleep-timer chip.
+ * Full-screen "Now Playing" — Metrolist / OpenTune-style.
+ *
+ * Layout (top → bottom):
+ *  - Header: "Now Playing" + uppercase TRACK ALBUM
+ *  - Wide 16:9 high-res artwork with rounded corners + soft shadow
+ *  - Title (uppercase, bold) + artist · right side: download pill + like pill
+ *  - Slider + 0:21 / 2:47 timestamps
+ *  - BIG white "Play" pill flanked by dark-capsule prev / next
+ *  - Bottom toolbar: queue, sleep, equalizer, lyrics, shuffle, repeat, more
+ *  - Background = soft gradient pulled from the album-art dominant color (Palette)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,10 +71,13 @@ fun NowPlayingSheet(
     track: YtTrack,
     player: Player?,
     state: MusicState,
+    isDownloaded: Boolean,
+    downloadProgress: Float?,
     onDismiss: () -> Unit,
     onSetSleepTimer: (minutes: Int) -> Unit,
     onCancelSleepTimer: () -> Unit,
     onLike: () -> Unit,
+    onDownload: () -> Unit,
 ) {
     var positionMs by remember { mutableStateOf(0L) }
     var durationMs by remember { mutableStateOf(0L) }
@@ -64,154 +91,192 @@ fun NowPlayingSheet(
         }
     }
     var showSleep by remember { mutableStateOf(false) }
+    var showLyricsPane by remember { mutableStateOf(false) }
+
+    // Palette: pull dominant warm color from the album thumbnail for the background.
+    val dominant by rememberDominantColor(track.thumbnail)
+    val animDominant by animateColorAsState(
+        targetValue = dominant,
+        animationSpec = tween(durationMillis = 600),
+        label = "np-bg",
+    )
+    val onBg = if (animDominant.luminance() > 0.5f) Color(0xFF111111) else Color.White
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
+        scrimColor = Color.Transparent,
         dragHandle = null,
         modifier = Modifier.fillMaxSize(),
     ) {
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
-            // Top row: chevron-down + sleep-timer button
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.ExpandMore, "Close", tint = MaterialTheme.colorScheme.onBackground)
-                }
-                Spacer(Modifier.weight(1f))
-                state.sleepTimerEndTs?.let { _ ->
-                    val mins = (state.sleepTimerRemainingMs / 60_000L) + 1
-                    AssistChip(
-                        onClick = { onCancelSleepTimer() },
-                        label = { Text("Sleep in ${mins}m · tap to cancel") },
-                        leadingIcon = { Icon(Icons.Default.Bedtime, null) },
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(animDominant.copy(alpha = 0.95f), animDominant.copy(alpha = 0.55f), Color(0xFF161616)),
                     )
-                } ?: AssistChip(
-                    onClick = { showSleep = true },
-                    label = { Text("Sleep timer") },
-                    leadingIcon = { Icon(Icons.Default.Bedtime, null) },
                 )
-            }
-            Spacer(Modifier.height(16.dp))
-            AsyncImage(
-                model = track.thumbnail,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(280.dp)
-                    .align(Alignment.CenterHorizontally)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-            )
-            Spacer(Modifier.height(20.dp))
-            Text(
-                track.title,
-                color = MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
-                maxLines = 2, overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                track.uploader,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(16.dp))
-            // Progress slider
-            Slider(
-                value = if (durationMs > 0) positionMs / durationMs.toFloat() else 0f,
-                onValueChange = { v -> player?.seekTo((v * durationMs).toLong()) },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(formatTime(positionMs), color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall)
-                Text(formatTime(durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall)
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = {
-                    val next = when (state.repeatMode) {
-                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                        else -> Player.REPEAT_MODE_OFF
+        ) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+                // Top row: chevron-down — title — sleep chip
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    NpIconButton(onClick = onDismiss, tint = onBg) {
+                        Icon(Icons.Default.ExpandMore, "Close")
                     }
-                    player?.repeatMode = next
-                }) {
-                    Icon(
-                        if (state.repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                        "Repeat",
-                        tint = if (state.repeatMode == Player.REPEAT_MODE_OFF)
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.primary,
+                    Spacer(Modifier.weight(1f))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "Now Playing",
+                            color = onBg,
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        )
+                        Text(
+                            track.title.uppercase().take(40),
+                            color = onBg,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    NpIconButton(onClick = { showSleep = true }, tint = onBg) {
+                        Icon(Icons.Default.MoreVert, "More")
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // Wide artwork (16:9 with rounded corners + shadow)
+                AsyncImage(
+                    model = track.thumbnail,
+                    contentDescription = track.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 10f)
+                        .shadow(20.dp, RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.25f)),
+                )
+
+                Spacer(Modifier.height(20.dp))
+
+                // Title + artist + (download / like pills)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            track.title.uppercase(),
+                            color = onBg,
+                            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            track.uploader,
+                            color = onBg.copy(alpha = 0.8f),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    PillButton(
+                        icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                        contentDescription = if (isDownloaded) "Downloaded" else "Download",
+                        active = isDownloaded,
+                        loading = downloadProgress != null,
+                        onClick = { if (!isDownloaded && downloadProgress == null) onDownload() },
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    PillButton(
+                        icon = if (state.isCurrentLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (state.isCurrentLiked) "Unlike" else "Like",
+                        active = state.isCurrentLiked,
+                        onClick = onLike,
                     )
                 }
-                IconButton(onClick = { player?.seekToPreviousMediaItem() }) {
-                    Icon(Icons.Default.SkipPrevious, "Previous",
-                        tint = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.size(36.dp))
+
+                Spacer(Modifier.height(16.dp))
+
+                // Slider + timestamps
+                Slider(
+                    value = if (durationMs > 0) positionMs / durationMs.toFloat() else 0f,
+                    onValueChange = { v -> player?.seekTo((v * durationMs).toLong()) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = onBg,
+                        activeTrackColor = onBg,
+                        inactiveTrackColor = onBg.copy(alpha = 0.3f),
+                    ),
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        formatTime(positionMs),
+                        color = onBg.copy(alpha = 0.85f),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    )
+                    Text(
+                        formatTime(durationMs),
+                        color = onBg.copy(alpha = 0.85f),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    )
                 }
-                Box(
-                    Modifier
-                        .size(72.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
-                        .clickable { if (player?.isPlaying == true) player.pause() else player?.play() },
-                    contentAlignment = Alignment.Center,
+
+                Spacer(Modifier.height(16.dp))
+
+                // Big play pill flanked by prev/next dark capsules
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        if (player?.isPlaying == true) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        null, tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(40.dp),
+                    DarkCapsule(
+                        icon = Icons.Default.SkipPrevious,
+                        contentDescription = "Previous",
+                        onClick = { player?.seekToPreviousMediaItem() },
+                    )
+                    PlayPill(
+                        playing = player?.isPlaying == true,
+                        onClick = {
+                            if (player?.isPlaying == true) player.pause() else player?.play()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    DarkCapsule(
+                        icon = Icons.Default.SkipNext,
+                        contentDescription = "Next",
+                        onClick = { player?.seekToNextMediaItem() },
                     )
                 }
-                IconButton(onClick = { player?.seekToNextMediaItem() }) {
-                    Icon(Icons.Default.SkipNext, "Next",
-                        tint = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.size(36.dp))
-                }
-                IconButton(onClick = {
-                    val newShuffle = !state.shuffleEnabled
-                    player?.shuffleModeEnabled = newShuffle
-                }) {
-                    Icon(
-                        Icons.Default.Shuffle, "Shuffle",
-                        tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+
+                Spacer(Modifier.height(16.dp))
+
+                // Bottom toolbar — queue / sleep / eq / lyrics / shuffle / repeat / more
+                BottomToolbar(
+                    state = state,
+                    showLyrics = showLyricsPane,
+                    sleepActive = state.sleepTimerEndTs != null,
+                    onLyricsToggle = { showLyricsPane = !showLyricsPane },
+                    onSleepClick = {
+                        if (state.sleepTimerEndTs != null) onCancelSleepTimer() else showSleep = true
+                    },
+                    onShuffle = { player?.shuffleModeEnabled = !state.shuffleEnabled },
+                    onRepeat = {
+                        val next = when (state.repeatMode) {
+                            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                            else -> Player.REPEAT_MODE_OFF
+                        }
+                        player?.repeatMode = next
+                    },
+                )
+
+                if (showLyricsPane) {
+                    Spacer(Modifier.height(12.dp))
+                    LyricsView(state = state, positionMs = positionMs, onTextColor = onBg)
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            // Like button row
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onLike) {
-                    Icon(
-                        if (state.isCurrentLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        if (state.isCurrentLiked) "Unlike" else "Like",
-                        tint = if (state.isCurrentLiked) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            // Lyrics
-            Text(
-                "Lyrics",
-                color = MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(Modifier.height(8.dp))
-            LyricsView(state = state, positionMs = positionMs)
         }
     }
+
     if (showSleep) {
         SleepTimerDialog(
             onDismiss = { showSleep = false },
@@ -221,10 +286,193 @@ fun NowPlayingSheet(
 }
 
 @Composable
-private fun LyricsView(state: MusicState, positionMs: Long) {
+private fun PillButton(
+    icon: ImageVector,
+    contentDescription: String,
+    active: Boolean,
+    loading: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val bg = if (active) Color.White else Color.White.copy(alpha = 0.95f)
+    val fg = Color(0xFF111111)
+    Box(
+        Modifier
+            .height(46.dp)
+            .widthIn(min = 70.dp)
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 22.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(
+                Modifier.size(22.dp), strokeWidth = 2.dp, color = fg,
+            )
+        } else {
+            Icon(icon, contentDescription, tint = fg, modifier = Modifier.size(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun DarkCapsule(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(width = 78.dp, height = 56.dp)
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.45f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(28.dp))
+    }
+}
+
+@Composable
+private fun PlayPill(playing: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        modifier = modifier
+            .height(56.dp)
+            .clip(RoundedCornerShape(50))
+            .background(Color.White)
+            .clickable(onClick = onClick),
+    ) {
+        Icon(
+            if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+            if (playing) "Pause" else "Play",
+            tint = Color(0xFF111111),
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            if (playing) "Pause" else "Play",
+            color = Color(0xFF111111),
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+            fontSize = 22.sp,
+        )
+    }
+}
+
+@Composable
+private fun NpIconButton(onClick: () -> Unit, tint: Color, content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        CompositionLocalProvider(LocalContentColor provides tint) { content() }
+    }
+}
+
+@Composable
+private fun BottomToolbar(
+    state: MusicState,
+    showLyrics: Boolean,
+    sleepActive: Boolean,
+    onLyricsToggle: () -> Unit,
+    onSleepClick: () -> Unit,
+    onShuffle: () -> Unit,
+    onRepeat: () -> Unit,
+) {
+    val items: List<Triple<ImageVector, String, Pair<Boolean, () -> Unit>>> = listOf(
+        Triple(Icons.Default.QueueMusic, "Queue", false to {}),
+        Triple(Icons.Default.Bedtime, "Sleep", sleepActive to onSleepClick),
+        Triple(Icons.Default.Tune, "Equalizer", false to {}),
+        Triple(Icons.Default.Lyrics, "Lyrics", showLyrics to onLyricsToggle),
+        Triple(Icons.Default.Shuffle, "Shuffle", state.shuffleEnabled to onShuffle),
+        Triple(
+            if (state.repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+            "Repeat",
+            (state.repeatMode != Player.REPEAT_MODE_OFF) to onRepeat,
+        ),
+        Triple(Icons.Default.MoreVert, "More", false to {}),
+    )
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items.forEachIndexed { i, (icon, desc, pair) ->
+            val (active, onClick) = pair
+            val isLast = i == items.lastIndex
+            ToolbarChip(
+                icon = icon, contentDescription = desc, active = active,
+                solid = isLast, // last chip is the white solid "more" button
+                onClick = onClick, modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolbarChip(
+    icon: ImageVector,
+    contentDescription: String,
+    active: Boolean,
+    solid: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val bg = when {
+        solid -> Color.White
+        active -> Color.White.copy(alpha = 0.25f)
+        else -> Color.Black.copy(alpha = 0.4f)
+    }
+    val fg = if (solid) Color(0xFF111111) else Color.White
+    Box(
+        modifier
+            .height(48.dp)
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription, tint = fg, modifier = Modifier.size(20.dp))
+    }
+}
+
+@Composable
+private fun rememberDominantColor(thumbnailUrl: String?): State<Color> {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val state = remember { mutableStateOf(Color(0xFF8A6A48)) } // warm-tan default
+    LaunchedEffect(thumbnailUrl) {
+        if (thumbnailUrl.isNullOrBlank()) return@LaunchedEffect
+        runCatching {
+            val loader = coil.ImageLoader(context)
+            val req = coil.request.ImageRequest.Builder(context)
+                .data(thumbnailUrl)
+                .allowHardware(false)
+                .size(160)
+                .build()
+            val res = loader.execute(req)
+            val drawable = (res as? SuccessResult)?.drawable as? BitmapDrawable
+            val bitmap: Bitmap? = drawable?.bitmap
+            if (bitmap != null) {
+                Palette.from(bitmap).generate { p ->
+                    val swatch = p?.dominantSwatch ?: p?.vibrantSwatch ?: p?.mutedSwatch
+                    if (swatch != null) {
+                        state.value = Color(swatch.rgb).copy(alpha = 1f)
+                    }
+                }
+            }
+        }
+    }
+    return state
+}
+
+@Composable
+private fun LyricsView(state: MusicState, positionMs: Long, onTextColor: Color) {
     when {
         state.lyricsLoading -> Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = onTextColor)
         }
         state.lyrics?.syncedLyrics?.isNotBlank() == true -> {
             val parsed = remember(state.lyrics) {
@@ -234,15 +482,15 @@ private fun LyricsView(state: MusicState, positionMs: Long) {
                 parsed.indexOfLast { it.first <= positionMs }.coerceAtLeast(0)
             }
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 items(parsed.size) { i ->
                     val (_, line) = parsed[i]
                     Text(
                         line,
-                        color = if (i == activeIdx) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        color = if (i == activeIdx) onTextColor
+                        else onTextColor.copy(alpha = 0.55f),
                         style = if (i == activeIdx) MaterialTheme.typography.titleMedium
                         else MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Start,
@@ -252,20 +500,15 @@ private fun LyricsView(state: MusicState, positionMs: Long) {
             }
         }
         state.lyrics?.plainLyrics?.isNotBlank() == true -> {
-            val text = state.lyrics.plainLyrics
-            LazyColumn(Modifier.fillMaxSize()) {
-                item {
-                    Text(
-                        text,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
+            Text(
+                state.lyrics.plainLyrics,
+                color = onTextColor.copy(alpha = 0.85f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
         else -> Text(
             "No lyrics found.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = onTextColor.copy(alpha = 0.7f),
             modifier = Modifier.padding(8.dp),
         )
     }
@@ -295,5 +538,5 @@ private fun formatTime(ms: Long): String {
     val totalSec = ms / 1000
     val m = totalSec / 60
     val s = totalSec % 60
-    return String.format("%d:%02d", m, s)
+    return "%d:%02d".format(m, s)
 }

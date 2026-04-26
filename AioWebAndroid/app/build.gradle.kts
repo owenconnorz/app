@@ -166,4 +166,8 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
+
+    // Androidx Palette — extracts dominant color from album art for Metrolist-style
+    // gradient backgrounds in the Now Playing sheet.
+    implementation("androidx.palette:palette-ktx:1.0.0")
 }

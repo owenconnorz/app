@@ -345,14 +345,28 @@ fun MusicScreen() {
             )
         }
         if (showNowPlaying && nowPlaying != null) {
+            val downloaded = state.recent.firstOrNull { it.url == nowPlaying.url }?.localPath != null ||
+                state.liked.firstOrNull { it.url == nowPlaying.url }?.localPath != null
+            val dlProgress = downloadProgressMap[nowPlaying.url]
             NowPlayingSheet(
                 track = nowPlaying,
                 player = player,
                 state = state,
+                isDownloaded = downloaded,
+                downloadProgress = dlProgress,
                 onDismiss = { showNowPlaying = false },
                 onSetSleepTimer = { mins -> vm.startSleepTimer(mins) { player?.pause() } },
                 onCancelSleepTimer = { vm.cancelSleepTimer() },
                 onLike = { vm.toggleLikeCurrent() },
+                onDownload = {
+                    val ctx = context
+                    dlScope.launch {
+                        runCatching {
+                            com.aioweb.app.data.downloads.MusicDownloader
+                                .download(ctx, nowPlaying.url, nowPlaying.title)
+                        }
+                    }
+                },
             )
         }
     }
