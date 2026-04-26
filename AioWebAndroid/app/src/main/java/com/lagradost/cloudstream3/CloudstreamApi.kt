@@ -291,7 +291,6 @@ fun fixUrl(url: String, mainUrl: String): String = when {
     else -> "$mainUrl/$url"
 }
 fun fixUrlNull(url: String?, mainUrl: String): String? = url?.let { fixUrl(it, mainUrl) }
-@JvmName("fixUrlExt") fun String.fixUrl(mainUrl: String): String = fixUrl(this, mainUrl)
 
 // `safeApiCall { ... }` wrapper — common in plugins.
 suspend fun <T> safeApiCall(apiCall: suspend () -> T): T? = try { apiCall() } catch (_: Exception) { null }
