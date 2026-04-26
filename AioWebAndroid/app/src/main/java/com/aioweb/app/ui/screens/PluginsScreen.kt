@@ -41,6 +41,9 @@ fun PluginsScreen(onBack: () -> Unit) {
     var addName by remember { mutableStateOf("") }
     var addUrl by remember { mutableStateOf("") }
 
+    var showAddStremio by remember { mutableStateOf(false) }
+    var stremioUrl by remember { mutableStateOf("") }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -91,6 +94,50 @@ fun PluginsScreen(onBack: () -> Unit) {
                 }
                 item { Spacer(Modifier.height(8.dp)) }
             }
+
+            // ── Stremio addons ────────────────────────────
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel("Stremio addons (${state.stremioAddons.size})")
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { showAddStremio = true }) {
+                        Icon(Icons.Default.Add, null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Add addon")
+                    }
+                }
+            }
+            if (state.stremioAddons.isEmpty()) {
+                item {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(16.dp),
+                    ) {
+                        Text(
+                            "No Stremio addons yet",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Paste a Stremio addon manifest URL (or any addon's homepage). " +
+                                "Examples:\n" +
+                                "• https://v3-cinemeta.strem.io/manifest.json\n" +
+                                "• https://torrentio.strem.fun/manifest.json\n" +
+                                "• https://nuviostreams.hayd.uk/manifest.json (NuvioStreams)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            items(state.stremioAddons, key = { it.manifestUrl }) { addon ->
+                StremioAddonRow(addon, onRemove = { vm.removeStremioAddon(addon.manifestUrl) })
+            }
+            item { Spacer(Modifier.height(8.dp)) }
 
             item { SectionLabel("Repositories") }
 
@@ -179,6 +226,48 @@ fun PluginsScreen(onBack: () -> Unit) {
             }
         )
     }
+
+    if (showAddStremio) {
+        AlertDialog(
+            onDismissRequest = { showAddStremio = false },
+            title = { Text("Add Stremio addon") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = stremioUrl, onValueChange = { stremioUrl = it },
+                        label = { Text("Manifest URL") },
+                        placeholder = { Text("https://your-addon.com/manifest.json") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Paste any Stremio addon manifest URL. Examples that just work:\n" +
+                            "• https://v3-cinemeta.strem.io/manifest.json\n" +
+                            "• https://torrentio.strem.fun/manifest.json\n" +
+                            "• https://nuviostreams.hayd.uk/manifest.json",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !state.addingStremio,
+                    onClick = {
+                        vm.addStremioAddon(stremioUrl)
+                        stremioUrl = ""; showAddStremio = false
+                    },
+                ) {
+                    if (state.addingStremio) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    else Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddStremio = false }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -253,6 +342,56 @@ private fun InstalledRow(p: InstalledPlugin, onUninstall: () -> Unit) {
         }
     }
 }
+
+@Composable
+private fun StremioAddonRow(
+    addon: com.aioweb.app.data.stremio.InstalledStremioAddon,
+    onRemove: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(12.dp),
+    ) {
+        if (!addon.logo.isNullOrBlank()) {
+            coil.compose.AsyncImage(
+                model = addon.logo,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+        } else {
+            Icon(
+                Icons.Default.Extension, null,
+                tint = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(36.dp),
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                addon.name, color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "Stremio · ${addon.id}",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
 
 @Composable
 private fun RepoCard(

@@ -8,6 +8,8 @@ import com.aioweb.app.data.plugins.CloudStreamPlugin
 import com.aioweb.app.data.plugins.CloudStreamRepo
 import com.aioweb.app.data.plugins.InstalledPlugin
 import com.aioweb.app.data.plugins.PluginRepository
+import com.aioweb.app.data.stremio.InstalledStremioAddon
+import com.aioweb.app.data.stremio.StremioRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,18 +23,23 @@ data class PluginsState(
     val pluginsByRepo: Map<String, List<CloudStreamPlugin>> = emptyMap(),
     val loadingRepoIds: Set<String> = emptySet(),
     val installingNames: Set<String> = emptySet(),
+    val stremioAddons: List<InstalledStremioAddon> = emptyList(),
+    val addingStremio: Boolean = false,
     val error: String? = null,
     val info: String? = null,
 )
 
-class PluginsViewModel(private val repo: PluginRepository) : ViewModel() {
+class PluginsViewModel(
+    private val repo: PluginRepository,
+    private val stremio: StremioRepository,
+) : ViewModel() {
     private val _state = MutableStateFlow(PluginsState())
     val state: StateFlow<PluginsState> = _state.asStateFlow()
 
     init {
         viewModelScope.launch {
-            combine(repo.repos, repo.installed) { r, i -> r to i }
-                .collect { (r, i) -> _state.update { it.copy(repos = r, installed = i) } }
+            combine(repo.repos, repo.installed, stremio.addons) { r, i, s -> Triple(r, i, s) }
+                .collect { (r, i, s) -> _state.update { it.copy(repos = r, installed = i, stremioAddons = s) } }
         }
     }
 
@@ -99,6 +106,25 @@ class PluginsViewModel(private val repo: PluginRepository) : ViewModel() {
         repo.uninstallPlugin(p.internalName, p.sourceRepoId)
     }
 
+    /** Add a Stremio addon by manifest URL (or any URL — we'll auto-append /manifest.json). */
+    fun addStremioAddon(url: String) = viewModelScope.launch {
+        if (url.isBlank()) {
+            _state.update { it.copy(error = "Manifest URL is required") }
+            return@launch
+        }
+        _state.update { it.copy(addingStremio = true, error = null) }
+        try {
+            val a = stremio.addAddon(url.trim())
+            _state.update { it.copy(addingStremio = false, info = "Stremio addon added: ${a.name}") }
+        } catch (e: Exception) {
+            _state.update { it.copy(addingStremio = false, error = "Stremio: ${e.message}") }
+        }
+    }
+
+    fun removeStremioAddon(manifestUrl: String) = viewModelScope.launch {
+        stremio.removeAddon(manifestUrl)
+    }
+
     fun clearMessages() {
         _state.update { it.copy(error = null, info = null) }
     }
@@ -107,7 +133,10 @@ class PluginsViewModel(private val repo: PluginRepository) : ViewModel() {
         fun factory(context: Context) = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 @Suppress("UNCHECKED_CAST")
-                return PluginsViewModel(PluginRepository(context.applicationContext)) as T
+                return PluginsViewModel(
+                    PluginRepository(context.applicationContext),
+                    StremioRepository(context.applicationContext),
+                ) as T
             }
         }
     }

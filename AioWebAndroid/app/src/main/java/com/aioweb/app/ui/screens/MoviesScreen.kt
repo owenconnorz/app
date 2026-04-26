@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AllInclusive
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Search
@@ -59,6 +60,7 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
             item {
                 SourceChipsRow(
                     plugins = state.installedPlugins,
+                    stremioAddons = state.installedStremioAddons,
                     selectedId = state.selectedSourceId,
                     onSelect = vm::selectSource,
                 )
@@ -120,16 +122,37 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
 
             if (query.isNotBlank()) {
                 item { SectionTitle("Search results") }
-                if (state.isPluginActive) {
-                    item {
-                        PluginPosterGrid(state.pluginSearchResults) { /* TODO link to plugin detail */ }
+                when {
+                    state.isStremioActive -> {
+                        item { StremioPosterGrid(state.stremioSearchResults) }
                     }
-                } else {
-                    item {
-                        PosterGrid(
-                            movies = state.searchResults,
-                            onClick = onMovieClick,
-                        )
+                    state.isPluginActive -> {
+                        item {
+                            PluginPosterGrid(state.pluginSearchResults) { /* TODO link to plugin detail */ }
+                        }
+                    }
+                    else -> {
+                        item {
+                            PosterGrid(
+                                movies = state.searchResults,
+                                onClick = onMovieClick,
+                            )
+                        }
+                    }
+                }
+            } else if (state.isStremioActive) {
+                // ── Stremio addon catalogs ────────────────────────────
+                state.stremioSections.forEachIndexed { idx, section ->
+                    item(key = "ssec_t_$idx") { SectionTitle(section.title) }
+                    item(key = "ssec_$idx") {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            items(section.items, key = { "sm_${idx}_${it.id}" }) { meta ->
+                                StremioPoster(meta)
+                            }
+                        }
                     }
                 }
             } else if (state.isPluginActive) {
@@ -249,6 +272,7 @@ private fun MoviesSearchField(query: String, loading: Boolean, onQueryChange: (S
 @Composable
 private fun SourceChipsRow(
     plugins: List<InstalledPlugin>,
+    stremioAddons: List<com.aioweb.app.data.stremio.InstalledStremioAddon>,
     selectedId: String,
     onSelect: (String) -> Unit,
 ) {
@@ -264,13 +288,22 @@ private fun SourceChipsRow(
                 onClick = { onSelect(SOURCE_BUILTIN) },
             )
         }
-        items(plugins, key = { it.internalName }) { p ->
+        items(plugins, key = { "pl_${it.internalName}" }) { p ->
             SourceChip(
                 label = p.name,
                 icon = Icons.Default.Extension,
                 logoUrl = p.iconUrl,
                 selected = selectedId == p.internalName,
                 onClick = { onSelect(p.internalName) },
+            )
+        }
+        items(stremioAddons, key = { "st_${it.manifestUrl}" }) { a ->
+            SourceChip(
+                label = a.name,
+                icon = Icons.Default.Bolt,
+                logoUrl = a.logo,
+                selected = selectedId == "${com.aioweb.app.ui.viewmodel.SOURCE_STREMIO_PREFIX}${a.manifestUrl}",
+                onClick = { onSelect("${com.aioweb.app.ui.viewmodel.SOURCE_STREMIO_PREFIX}${a.manifestUrl}") },
             )
         }
     }
@@ -453,6 +486,87 @@ private fun PluginPoster(sr: com.lagradost.cloudstream3.SearchResponse, onClick:
         )
     }
 }
+
+@Composable
+private fun StremioPoster(meta: com.aioweb.app.data.stremio.StremioMetaPreview) {
+    Column(
+        Modifier
+            .width(140.dp)
+            .clip(RoundedCornerShape(12.dp)),
+    ) {
+        AsyncImage(
+            model = meta.poster,
+            contentDescription = meta.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth().aspectRatio(2f / 3f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surface),
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            meta.name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (!meta.releaseInfo.isNullOrBlank()) {
+            Text(
+                meta.releaseInfo,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun StremioPosterGrid(items: List<com.aioweb.app.data.stremio.StremioMetaPreview>) {
+    if (items.isEmpty()) {
+        Text(
+            "No results from this addon.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(20.dp),
+        )
+        return
+    }
+    Column(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { m ->
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp)),
+                    ) {
+                        AsyncImage(
+                            model = m.poster,
+                            contentDescription = m.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth().aspectRatio(2f / 3f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surface),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            m.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun PluginPosterGrid(

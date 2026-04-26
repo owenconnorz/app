@@ -226,8 +226,8 @@ class MainPageRequest(
 fun mainPage(data: String, name: String, horizontalImages: Boolean = false) =
     MainPageRequest(name = name, data = data, horizontalImages = horizontalImages)
 
-fun mainPageOf(vararg pairs: Pair<String, String>) =
-    pairs.map { (data, name) -> MainPageRequest(name, data, false) }.toTypedArray()
+fun mainPageOf(vararg pairs: Pair<String, String>): List<MainPageRequest> =
+    pairs.map { (data, name) -> MainPageRequest(name, data, false) }
 
 fun newHomePageResponse(name: String, list: List<SearchResponse>): HomePageResponse =
     HomePageResponse(listOf(HomePageList(name, list)))

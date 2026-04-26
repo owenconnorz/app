@@ -5,6 +5,8 @@ import com.aioweb.app.BuildConfig
 import com.aioweb.app.data.api.AioWebBackendApi
 import com.aioweb.app.data.api.TmdbApi
 import com.aioweb.app.data.network.Net
+import com.aioweb.app.data.plugins.PluginRepository
+import com.aioweb.app.data.stremio.StremioRepository
 import kotlinx.coroutines.flow.first
 
 /**
@@ -12,6 +14,8 @@ import kotlinx.coroutines.flow.first
  */
 class ServiceLocator(context: Context) {
     val settings = SettingsRepository(context.applicationContext)
+    val plugins = PluginRepository(context.applicationContext)
+    val stremio = StremioRepository(context.applicationContext)
 
     val tmdb: TmdbApi = Net.retrofit("https://api.themoviedb.org/").create(TmdbApi::class.java)
     val tmdbApiKey: String = BuildConfig.TMDB_API_KEY
