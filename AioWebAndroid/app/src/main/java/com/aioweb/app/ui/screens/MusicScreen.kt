@@ -43,7 +43,7 @@ private val SUGGESTIONS = listOf(
     "Throwback", "K-pop", "Hip hop", "Jazz", "EDM", "Acoustic"
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun MusicScreen() {
     val context = LocalContext.current
@@ -51,21 +51,29 @@ fun MusicScreen() {
     val state by vm.state.collectAsState()
     var query by remember { mutableStateOf("") }
 
-    val player = remember {
-        buildMusicExoPlayer(context)
-    }
+    // The Player is now a MediaController bound to our foreground MusicPlaybackService.
+    // This makes audio survive navigation AND auto-publishes the system notification.
+    var player by remember { mutableStateOf<androidx.media3.common.Player?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var playerError by remember { mutableStateOf<String?>(null) }
-    DisposableEffect(player) {
-        val l = object : Player.Listener {
-            override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
-            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                playerError = "Audio playback failed (${error.errorCodeName}): ${error.message}"
-            }
+
+    LaunchedEffect(Unit) {
+        try {
+            val controller = com.aioweb.app.audio.MusicController.get(context.applicationContext)
+            controller.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    playerError = "Audio playback failed (${error.errorCodeName}): ${error.message}"
+                }
+            })
+            player = controller
+            isPlaying = controller.isPlaying
+        } catch (e: Exception) {
+            playerError = "Couldn't connect to media service: ${e.message}"
         }
-        player.addListener(l)
-        onDispose { player.removeListener(l); player.release() }
     }
+    // NOTE: do NOT release the controller in onDispose — that would kill background playback.
+    // The service holds the player; the controller is just a thin client.
 
     val nowPlaying = state.tracks.firstOrNull { it.url == state.nowPlayingUrl }
 
@@ -139,9 +147,9 @@ fun MusicScreen() {
                                     track = track,
                                     isPlaying = isPlaying && state.nowPlayingUrl == track.url,
                                     onClick = {
-                                        if (state.nowPlayingUrl == track.url && player.isPlaying) player.pause()
-                                        else if (state.nowPlayingUrl == track.url) player.play()
-                                        else vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                        if (state.nowPlayingUrl == track.url && (player?.isPlaying == true)) player?.pause()
+                                        else if (state.nowPlayingUrl == track.url) player?.play()
+                                        else vm.play(track) { audioUrl -> player?.let { playTrack(it, track, audioUrl) } }
                                     }
                                 )
                             }
@@ -155,9 +163,9 @@ fun MusicScreen() {
                             isPlaying = isPlaying && state.nowPlayingUrl == track.url,
                             loading = state.resolvingUrl == track.url,
                             onClick = {
-                                if (state.nowPlayingUrl == track.url && player.isPlaying) player.pause()
-                                else if (state.nowPlayingUrl == track.url) player.play()
-                                else vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                if (state.nowPlayingUrl == track.url && (player?.isPlaying == true)) player?.pause()
+                                else if (state.nowPlayingUrl == track.url) player?.play()
+                                else vm.play(track) { audioUrl -> player?.let { playTrack(it, track, audioUrl) } }
                             }
                         )
                     }
@@ -204,12 +212,12 @@ fun MusicScreen() {
                                 track = track,
                                 isPlaying = isPlaying && state.nowPlayingUrl == track.url,
                                 onClick = {
-                                    if (state.nowPlayingUrl == track.url && player.isPlaying) {
-                                        player.pause()
+                                    if (state.nowPlayingUrl == track.url && (player?.isPlaying == true)) {
+                                        player?.pause()
                                     } else if (state.nowPlayingUrl == track.url) {
-                                        player.play()
+                                        player?.play()
                                     } else {
-                                        vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                        vm.play(track) { audioUrl -> player?.let { playTrack(it, track, audioUrl) } }
                                     }
                                 }
                             )
@@ -224,12 +232,12 @@ fun MusicScreen() {
                         isPlaying = isPlaying && state.nowPlayingUrl == track.url,
                         loading = state.resolvingUrl == track.url,
                         onClick = {
-                            if (state.nowPlayingUrl == track.url && player.isPlaying) {
-                                player.pause()
+                            if (state.nowPlayingUrl == track.url && (player?.isPlaying == true)) {
+                                player?.pause()
                             } else if (state.nowPlayingUrl == track.url) {
-                                player.play()
+                                player?.play()
                             } else {
-                                vm.play(track) { audioUrl -> playTrack(player, track, audioUrl) }
+                                vm.play(track) { audioUrl -> player?.let { playTrack(it, track, audioUrl) } }
                             }
                         }
                     )
@@ -251,7 +259,7 @@ fun MusicScreen() {
             MiniPlayer(
                 track = track,
                 isPlaying = isPlaying,
-                onToggle = { if (player.isPlaying) player.pause() else player.play() },
+                onToggle = { if (player?.isPlaying == true) player?.pause() else player?.play() },
                 onSkipNext = {
                     val idx = state.tracks.indexOfFirst { it.url == track.url }
                     state.tracks.getOrNull(idx + 1)?.let { next ->
@@ -272,8 +280,9 @@ fun MusicScreen() {
 
 /**
  * Build an ExoPlayer with a Chrome-like User-Agent and Range-request support.
- * googlevideo.com sometimes serves 403 to ExoPlayer's default UA, so we mirror
- * what the YouTube web client sends.
+ * NOTE: this is no longer used directly by the UI — the foreground service owns
+ * the player now — but we keep the helper around for any future direct-playback
+ * use case (preview, peek, etc.).
  */
 @OptIn(androidx.media3.common.util.UnstableApi::class)
 private fun buildMusicExoPlayer(context: android.content.Context): ExoPlayer {
@@ -290,7 +299,7 @@ private fun buildMusicExoPlayer(context: android.content.Context): ExoPlayer {
         .apply { playWhenReady = true }
 }
 
-private fun playTrack(player: ExoPlayer, track: YtTrack, audioUrl: String) {
+private fun playTrack(player: androidx.media3.common.Player, track: YtTrack, audioUrl: String) {
     player.setMediaItem(
         MediaItem.Builder()
             .setUri(audioUrl)
