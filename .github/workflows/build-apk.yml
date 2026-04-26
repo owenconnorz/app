@@ -104,20 +104,3 @@ jobs:
           name: AioWeb-apks
           path: AioWebAndroid/artifacts/*.apk
           retention-days: 30
-
-      - name: Create GitHub Release
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          name: AioWeb Android Build ${{ github.run_number }}
-          files: AioWebAndroid/artifacts/*.apk
-          prerelease: true
-          body: |
-            Auto-built APKs from commit ${{ github.sha }}.
-            
-            - **AioWeb-debug-*.apk** — debug build, sideload-only.
-            - **AioWeb-release-signed-*.apk** — production-signed release (only if release keystore secrets are configured).
-            - **AioWeb-release-UNSIGNED-*.apk** — produced if no keystore secrets exist.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
