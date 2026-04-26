@@ -14,4 +14,7 @@ captures/
 keystore.properties
 *.keystore
 *.jks
+# EXCEPT: the public fallback debug keystore that lets CI auto-sign releases
+# (creds documented in app/build.gradle.kts; safe to commit).
+!streamcloud-debug.jks
 release/
