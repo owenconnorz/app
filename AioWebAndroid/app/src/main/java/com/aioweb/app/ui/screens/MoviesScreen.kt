@@ -60,7 +60,6 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
             item {
                 SourceChipsRow(
                     plugins = state.installedPlugins,
-                    stremioAddons = state.installedStremioAddons,
                     selectedId = state.selectedSourceId,
                     onSelect = vm::selectSource,
                 )
@@ -122,37 +121,16 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
 
             if (query.isNotBlank()) {
                 item { SectionTitle("Search results") }
-                when {
-                    state.isStremioActive -> {
-                        item { StremioPosterGrid(state.stremioSearchResults) }
+                if (state.isPluginActive) {
+                    item {
+                        PluginPosterGrid(state.pluginSearchResults) { /* TODO link to plugin detail */ }
                     }
-                    state.isPluginActive -> {
-                        item {
-                            PluginPosterGrid(state.pluginSearchResults) { /* TODO link to plugin detail */ }
-                        }
-                    }
-                    else -> {
-                        item {
-                            PosterGrid(
-                                movies = state.searchResults,
-                                onClick = onMovieClick,
-                            )
-                        }
-                    }
-                }
-            } else if (state.isStremioActive) {
-                // ── Stremio addon catalogs ────────────────────────────
-                state.stremioSections.forEachIndexed { idx, section ->
-                    item(key = "ssec_t_$idx") { SectionTitle(section.title) }
-                    item(key = "ssec_$idx") {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            items(section.items, key = { "sm_${idx}_${it.id}" }) { meta ->
-                                StremioPoster(meta)
-                            }
-                        }
+                } else {
+                    item {
+                        PosterGrid(
+                            movies = state.searchResults,
+                            onClick = onMovieClick,
+                        )
                     }
                 }
             } else if (state.isPluginActive) {
@@ -272,7 +250,6 @@ private fun MoviesSearchField(query: String, loading: Boolean, onQueryChange: (S
 @Composable
 private fun SourceChipsRow(
     plugins: List<InstalledPlugin>,
-    stremioAddons: List<com.aioweb.app.data.stremio.InstalledStremioAddon>,
     selectedId: String,
     onSelect: (String) -> Unit,
 ) {
@@ -295,15 +272,6 @@ private fun SourceChipsRow(
                 logoUrl = p.iconUrl,
                 selected = selectedId == p.internalName,
                 onClick = { onSelect(p.internalName) },
-            )
-        }
-        items(stremioAddons, key = { "st_${it.manifestUrl}" }) { a ->
-            SourceChip(
-                label = a.name,
-                icon = Icons.Default.Bolt,
-                logoUrl = a.logo,
-                selected = selectedId == "${com.aioweb.app.ui.viewmodel.SOURCE_STREMIO_PREFIX}${a.manifestUrl}",
-                onClick = { onSelect("${com.aioweb.app.ui.viewmodel.SOURCE_STREMIO_PREFIX}${a.manifestUrl}") },
             )
         }
     }

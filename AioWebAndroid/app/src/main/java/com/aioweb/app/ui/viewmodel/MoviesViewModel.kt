@@ -22,17 +22,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 const val SOURCE_BUILTIN = "builtin"
-const val SOURCE_STREMIO_PREFIX = "stremio:"   // followed by manifest URL
 
 data class PluginSection(
     val title: String,
     val items: List<SearchResponse>,
-)
-
-/** A flat poster row used for both Stremio addons and TMDB. */
-data class StremioSection(
-    val title: String,
-    val items: List<StremioMetaPreview>,
 )
 
 data class MoviesState(
@@ -52,24 +45,13 @@ data class MoviesState(
     val pluginSearchResults: List<SearchResponse> = emptyList(),
     val pluginLoading: Boolean = false,
     val pluginError: String? = null,
-    // Stremio-driven state
-    val stremioSections: List<StremioSection> = emptyList(),
-    val stremioSearchResults: List<StremioMetaPreview> = emptyList(),
 ) {
     /** Display name of the currently selected source. */
     val selectedSourceName: String
-        get() = when {
-            selectedSourceId == SOURCE_BUILTIN -> "TMDB"
-            selectedSourceId.startsWith(SOURCE_STREMIO_PREFIX) -> installedStremioAddons.firstOrNull {
-                "$SOURCE_STREMIO_PREFIX${it.manifestUrl}" == selectedSourceId
-            }?.name ?: "Stremio addon"
-            else -> installedPlugins.firstOrNull { it.internalName == selectedSourceId }?.name ?: "Plugin"
-        }
+        get() = if (selectedSourceId == SOURCE_BUILTIN) "TMDB"
+        else installedPlugins.firstOrNull { it.internalName == selectedSourceId }?.name ?: "Plugin"
 
-    val isPluginActive: Boolean get() =
-        selectedSourceId != SOURCE_BUILTIN && !selectedSourceId.startsWith(SOURCE_STREMIO_PREFIX)
-
-    val isStremioActive: Boolean get() = selectedSourceId.startsWith(SOURCE_STREMIO_PREFIX)
+    val isPluginActive: Boolean get() = selectedSourceId != SOURCE_BUILTIN
 }
 
 class MoviesViewModel(
@@ -125,66 +107,11 @@ class MoviesViewModel(
                 selectedSourceId = sourceId,
                 pluginSections = emptyList(),
                 pluginSearchResults = emptyList(),
-                stremioSections = emptyList(),
-                stremioSearchResults = emptyList(),
                 pluginError = null,
             )
         }
-        when {
-            sourceId == SOURCE_BUILTIN -> _state.update { it.copy(notice = null) }
-            sourceId.startsWith(SOURCE_STREMIO_PREFIX) -> loadStremioHome(sourceId)
-            else -> loadPluginHome(sourceId)
-        }
-    }
-
-    private fun loadStremioHome(sourceId: String) {
-        val manifest = sourceId.removePrefix(SOURCE_STREMIO_PREFIX)
-        val addon = _state.value.installedStremioAddons.firstOrNull { it.manifestUrl == manifest }
-        if (addon == null) {
-            _state.update { it.copy(pluginError = "Stremio addon not found.") }
-            return
-        }
-        _state.update { it.copy(pluginLoading = true, pluginError = null, notice = null) }
-        viewModelScope.launch {
-            try {
-                val mf = stremioRepo.fetchManifest(addon.manifestUrl)
-                val sections = mf.catalogs
-                    .filter { c -> c.extra?.none { it.isRequired && it.name.lowercase() == "search" } != false }
-                    .take(6)   // keep it snappy
-                    .mapNotNull { def ->
-                        runCatching {
-                            val items = stremioRepo.fetchCatalog(addon, def.type, def.id)
-                            if (items.isEmpty()) null
-                            else StremioSection(def.name ?: "${def.type} · ${def.id}", items)
-                        }.getOrNull()
-                    }
-                if (sections.isEmpty()) {
-                    _state.update {
-                        it.copy(
-                            pluginLoading = false,
-                            stremioSections = emptyList(),
-                            notice = "Addon loaded — no catalogs available. Use search.",
-                        )
-                    }
-                } else {
-                    _state.update {
-                        it.copy(
-                            pluginLoading = false,
-                            stremioSections = sections,
-                            pluginError = null,
-                            notice = null,
-                        )
-                    }
-                }
-            } catch (e: Throwable) {
-                _state.update {
-                    it.copy(
-                        pluginLoading = false,
-                        pluginError = "Stremio addon failed: ${e::class.simpleName}: ${e.message}",
-                    )
-                }
-            }
-        }
+        if (sourceId != SOURCE_BUILTIN) loadPluginHome(sourceId)
+        else _state.update { it.copy(notice = null) }
     }
 
     private fun loadPluginHome(sourceId: String) {
@@ -236,44 +163,22 @@ class MoviesViewModel(
     fun search(query: String) {
         searchJob?.cancel()
         if (query.isBlank()) {
-            _state.update { it.copy(
-                searchResults = emptyList(),
-                pluginSearchResults = emptyList(),
-                stremioSearchResults = emptyList(),
-            ) }
+            _state.update { it.copy(searchResults = emptyList(), pluginSearchResults = emptyList()) }
             return
         }
         searchJob = viewModelScope.launch {
             delay(350)
             try {
-                when {
-                    _state.value.isStremioActive -> {
-                        val manifest = _state.value.selectedSourceId.removePrefix(SOURCE_STREMIO_PREFIX)
-                        val addon = _state.value.installedStremioAddons.firstOrNull { it.manifestUrl == manifest }
-                        if (addon != null) {
-                            val mf = stremioRepo.fetchManifest(addon.manifestUrl)
-                            // Find the first catalog declaring `search` as an extra arg.
-                            val first = mf.catalogs.firstOrNull { c ->
-                                c.extra?.any { it.name.lowercase() == "search" } == true
-                            } ?: mf.catalogs.firstOrNull()
-                            if (first != null) {
-                                val res = stremioRepo.fetchCatalog(addon, first.type, first.id, search = query)
-                                _state.update { it.copy(stremioSearchResults = res, error = null) }
-                            }
-                        }
+                if (_state.value.isPluginActive) {
+                    val plugin = _state.value.installedPlugins
+                        .firstOrNull { it.internalName == _state.value.selectedSourceId }
+                    if (plugin != null) {
+                        val res = PluginRuntime.search(appContext, plugin.filePath, query)
+                        _state.update { it.copy(pluginSearchResults = res, error = null) }
                     }
-                    _state.value.isPluginActive -> {
-                        val plugin = _state.value.installedPlugins
-                            .firstOrNull { it.internalName == _state.value.selectedSourceId }
-                        if (plugin != null) {
-                            val res = PluginRuntime.search(appContext, plugin.filePath, query)
-                            _state.update { it.copy(pluginSearchResults = res, error = null) }
-                        }
-                    }
-                    else -> {
-                        val res = sl.tmdb.search(sl.tmdbApiKey, query).results
-                        _state.update { it.copy(searchResults = res, error = null) }
-                    }
+                } else {
+                    val res = sl.tmdb.search(sl.tmdbApiKey, query).results
+                    _state.update { it.copy(searchResults = res, error = null) }
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(error = "Search failed: ${e.message}") }

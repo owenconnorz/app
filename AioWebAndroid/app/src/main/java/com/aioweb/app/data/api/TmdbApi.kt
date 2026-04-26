@@ -39,6 +39,11 @@ data class TmdbVideo(
 @Serializable
 data class TmdbVideosResponse(val results: List<TmdbVideo> = emptyList())
 
+@Serializable
+data class TmdbExternalIds(
+    @SerialName("imdb_id") val imdbId: String? = null,
+)
+
 interface TmdbApi {
     @GET("3/trending/movie/{window}")
     suspend fun trending(
@@ -82,4 +87,10 @@ interface TmdbApi {
         @retrofit2.http.Path("id") id: Long,
         @Query("api_key") apiKey: String,
     ): TmdbVideosResponse
+
+    @GET("3/movie/{id}/external_ids")
+    suspend fun externalIds(
+        @retrofit2.http.Path("id") id: Long,
+        @Query("api_key") apiKey: String,
+    ): TmdbExternalIds
 }
