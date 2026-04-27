@@ -16,7 +16,12 @@ data class NuvioRepoManifest(
     val description: String? = null,
     val version: String? = null,
     val providers: List<NuvioProviderEntry> = emptyList(),
-)
+    /** D3adlyRocket / Nuvio-team repos use `scrapers` instead of `providers`. */
+    val scrapers: List<NuvioProviderEntry> = emptyList(),
+) {
+    /** Unified accessor — newer repos use `scrapers`, older ones `providers`. */
+    val allProviders: List<NuvioProviderEntry> get() = providers + scrapers
+}
 
 @Serializable
 data class NuvioProviderEntry(
@@ -31,6 +36,8 @@ data class NuvioProviderEntry(
     @kotlinx.serialization.SerialName("downloadUrl") val downloadUrl: String? = null,
     @kotlinx.serialization.SerialName("download_url") val downloadUrlSnake: String? = null,
     val url: String? = null,
+    /** D3adlyRocket / Nuvio-team repos: relative path like `providers/foo.js`. */
+    val filename: String? = null,
     val enabled: Boolean = true,
 )
 

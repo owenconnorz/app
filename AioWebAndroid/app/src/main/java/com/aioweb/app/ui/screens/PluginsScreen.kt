@@ -344,7 +344,7 @@ fun PluginsScreen(onBack: () -> Unit) {
                     val mf = state.nuvioRepoManifest
                     if (mf != null) {
                         Text(
-                            "${mf.name ?: "Repo"} · ${mf.providers.size} providers",
+                            "${mf.name ?: "Repo"} · ${mf.allProviders.size} providers",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -352,7 +352,7 @@ fun PluginsScreen(onBack: () -> Unit) {
                             Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            mf.providers.forEach { entry ->
+                            mf.allProviders.forEach { entry ->
                                 val installing = entry.id in state.installingNuvioIds
                                 val already = state.nuvioProviders.any { it.id == entry.id }
                                 Row(

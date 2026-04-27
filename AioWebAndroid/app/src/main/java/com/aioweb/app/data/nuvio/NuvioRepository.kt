@@ -114,7 +114,7 @@ class NuvioRepository(private val context: Context) {
 
     /** Resolve the .js downloadUrl relative to the manifest URL when needed. */
     private fun resolveDownloadUrl(manifestUrl: String, e: NuvioProviderEntry): String? {
-        val raw = e.downloadUrl ?: e.downloadUrlSnake ?: e.url ?: return null
+        val raw = e.downloadUrl ?: e.downloadUrlSnake ?: e.url ?: e.filename ?: return null
         if (raw.startsWith("http")) return raw
         // Relative — resolve against manifest's base.
         val base = manifestUrl.substringBeforeLast('/')

@@ -16,5 +16,8 @@ class AioWebApplication : Application() {
             Localization.DEFAULT,           // en/US
             ContentCountry.DEFAULT,         // US
         )
+        // CloudStream plugins call top-level `setKey/getKey` from MainActivityKt — wire
+        // them to a SharedPreferences instance scoped to this process.
+        com.lagradost.cloudstream3.installPrefs(this)
     }
 }

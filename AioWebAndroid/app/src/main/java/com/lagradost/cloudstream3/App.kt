@@ -10,11 +10,15 @@ import org.jsoup.nodes.Document
 import java.util.concurrent.TimeUnit
 
 /**
- * Replica of cloudstream3's `app` object — the singleton HTTP client every plugin
- * uses. Real cloudstream uses NiceHTTP; we use OkHttp directly since the public
- * surface is similar.
+ * Replica of cloudstream3's `Requests` class — the singleton HTTP client every
+ * plugin uses. Real cloudstream uses NiceHTTP; we use OkHttp directly since the
+ * public surface is similar.
+ *
+ * Plugin code accesses this via the top-level `app` property defined in
+ * [MainActivity.kt], which compiles to `MainActivityKt.getApp()` — matching the
+ * symbol real CloudStream plugins are linked against.
  */
-object app {
+object Requests {
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)

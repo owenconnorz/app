@@ -181,4 +181,9 @@ dependencies {
     // We use the Android-flavoured fork that ships with Class.forName / reflection
     // tweaks so it doesn't blow up under the Android Runtime.
     implementation("com.faendir.rhino:rhino-android:1.6.0")
+
+    // Jackson — required by CloudStream `.cs3` plugins that call
+    // `MainActivityKt.mapper.readValue(...)` or `parsedSafe<...>()`. Without it,
+    // every plugin dies with NoClassDefFoundError on first JSON parse.
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
 }
