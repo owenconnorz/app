@@ -138,7 +138,25 @@ fun AioWebApp() {
                         },
                     )
                 }
-                composable(Tab.Music.route)    { MusicScreen() }
+                composable(Tab.Music.route)    {
+                    MusicScreen(
+                        onArtistClick = { url ->
+                            val u = URLEncoder.encode(url, "UTF-8")
+                            nav.navigate("artist/$u")
+                        },
+                    )
+                }
+                composable(
+                    "artist/{url}",
+                    arguments = listOf(navArgument("url") { type = NavType.StringType }),
+                ) { entry ->
+                    val url = URLDecoder.decode(entry.arguments!!.getString("url")!!, "UTF-8")
+                    com.aioweb.app.ui.screens.MusicArtistScreen(
+                        channelUrl = url,
+                        onBack = { nav.popBackStack() },
+                        onPlay = { /* TODO: wire to MusicPlaybackService via session */ },
+                    )
+                }
                 composable(Tab.Ai.route)       { AiScreen() }
                 composable(Tab.Library.route)  { LibraryScreen() }
                 composable(Tab.Adult.route) {

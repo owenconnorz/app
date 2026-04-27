@@ -30,6 +30,9 @@ object SettingsKeys {
     val BASS_BOOST = booleanPreferencesKey("bass_boost")
     val HF_TOKEN = stringPreferencesKey("hf_token")               // HuggingFace token for NSFW + image edit
     val HOME_COLLECTIONS = stringPreferencesKey("home_collections") // CSV of enabled collection ids
+    val YT_MUSIC_COOKIE = stringPreferencesKey("yt_music_cookie")     // Raw "Cookie:" header from music.youtube.com
+    val YT_MUSIC_USER_NAME = stringPreferencesKey("yt_music_user_name")
+    val YT_MUSIC_USER_AVATAR = stringPreferencesKey("yt_music_user_avatar")
 }
 
 class SettingsRepository(private val context: Context) {
@@ -60,6 +63,11 @@ class SettingsRepository(private val context: Context) {
      */
     val homeCollectionsCsv: Flow<String?> = context.dataStore.data.map { it[SettingsKeys.HOME_COLLECTIONS] }
 
+    /** Raw `Cookie:` header captured from music.youtube.com after login (Metrolist parity). */
+    val ytMusicCookie: Flow<String> = context.dataStore.data.map { it[SettingsKeys.YT_MUSIC_COOKIE] ?: "" }
+    val ytMusicUserName: Flow<String> = context.dataStore.data.map { it[SettingsKeys.YT_MUSIC_USER_NAME] ?: "" }
+    val ytMusicUserAvatar: Flow<String> = context.dataStore.data.map { it[SettingsKeys.YT_MUSIC_USER_AVATAR] ?: "" }
+
     suspend fun setBackendUrl(url: String) = context.dataStore.edit { it[SettingsKeys.BACKEND_URL] = url }
     suspend fun setAiProvider(p: String) = context.dataStore.edit { it[SettingsKeys.AI_PROVIDER] = p }
     suspend fun setAiModel(m: String) = context.dataStore.edit { it[SettingsKeys.AI_MODEL] = m }
@@ -81,4 +89,16 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setHomeCollections(ids: List<String>) =
         context.dataStore.edit { it[SettingsKeys.HOME_COLLECTIONS] = ids.joinToString(",") }
+
+    suspend fun setYtMusicCookie(cookie: String) =
+        context.dataStore.edit { it[SettingsKeys.YT_MUSIC_COOKIE] = cookie }
+    suspend fun setYtMusicUser(name: String, avatar: String) = context.dataStore.edit {
+        it[SettingsKeys.YT_MUSIC_USER_NAME] = name
+        it[SettingsKeys.YT_MUSIC_USER_AVATAR] = avatar
+    }
+    suspend fun clearYtMusicAccount() = context.dataStore.edit {
+        it.remove(SettingsKeys.YT_MUSIC_COOKIE)
+        it.remove(SettingsKeys.YT_MUSIC_USER_NAME)
+        it.remove(SettingsKeys.YT_MUSIC_USER_AVATAR)
+    }
 }

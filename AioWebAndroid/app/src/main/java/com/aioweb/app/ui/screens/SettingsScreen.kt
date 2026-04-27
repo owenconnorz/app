@@ -26,6 +26,9 @@ import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Login
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -117,6 +120,10 @@ fun SettingsScreen(onOpenPlugins: () -> Unit) {
                 subtitle = "${formatBytes(pluginsCacheBytes)} on device",
                 onClick = onOpenPlugins,
             )
+        }
+
+        Section("Account") {
+            YtMusicAccountRow()
         }
 
         Section("Content") {
@@ -671,3 +678,69 @@ private fun UpdaterRow() {
     }
 }
 
+
+/**
+ * "YouTube Music account" row inside Settings — Metrolist parity. Tapping it opens the
+ * WebView login flow which, on success, persists the captured `Cookie:` header to
+ * SettingsRepository and pipes it into NewPipe via [NewPipeDownloader].
+ *
+ * Once signed in we show a "Sign out" CTA that wipes the cookie + WebView session.
+ */
+@Composable
+private fun YtMusicAccountRow() {
+    val context = LocalContext.current
+    val sl = remember(context) { ServiceLocator.get(context) }
+    val cookie by sl.settings.ytMusicCookie.collectAsState(initial = "")
+    val userName by sl.settings.ytMusicUserName.collectAsState(initial = "")
+    val signedIn = cookie.isNotBlank()
+    val scope = rememberCoroutineScope()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !signedIn) {
+                val intent = Intent(
+                    context,
+                    com.aioweb.app.ui.account.YtMusicLoginActivity::class.java,
+                )
+                context.startActivity(intent)
+            }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (signedIn) Icons.Default.AccountCircle else Icons.Default.Login,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (signedIn) "YouTube Music" else "Sign in to YouTube Music",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                if (signedIn) (userName.ifBlank { "Signed in" })
+                else "Personalised mixes, recommendations and library",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (signedIn) {
+            TextButton(onClick = {
+                scope.launch {
+                    sl.settings.clearYtMusicAccount()
+                    com.aioweb.app.data.newpipe.NewPipeDownloader.instance.ytMusicCookie = ""
+                    // Best-effort: also wipe WebView cookies so the next login starts fresh.
+                    runCatching {
+                        android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                    }
+                }
+            }) {
+                Icon(Icons.Default.Logout, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Sign out")
+            }
+        }
+    }
+}

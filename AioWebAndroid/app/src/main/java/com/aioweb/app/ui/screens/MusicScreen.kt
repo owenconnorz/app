@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.MusicNote
@@ -41,6 +42,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.aioweb.app.data.newpipe.YtTrack
 import com.aioweb.app.ui.viewmodel.MusicViewModel
+import com.aioweb.app.ui.viewmodel.SearchMode
 import kotlinx.coroutines.launch
 
 private val SUGGESTIONS = listOf(
@@ -50,7 +52,7 @@ private val SUGGESTIONS = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.media3.common.util.UnstableApi::class)
 @Composable
-fun MusicScreen() {
+fun MusicScreen(onArtistClick: (String) -> Unit = {}) {
     val context = LocalContext.current
     val vm: MusicViewModel = viewModel(factory = MusicViewModel.factory(context))
     val state by vm.state.collectAsState()
@@ -244,50 +246,95 @@ fun MusicScreen() {
                 }
             }
 
-            // Top results — Hero cards (first 6 tracks)
-            if (state.tracks.isNotEmpty()) {
+            // Metrolist-style filter chips — only when the user is actively searching.
+            if (query.isNotBlank()) {
                 item {
-                    SectionTitle("Top results")
+                    SearchModeChips(
+                        active = state.searchMode,
+                        onPick = { mode -> vm.setSearchMode(mode) },
+                    )
                 }
-                item {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        items(state.tracks.take(6), key = { "hero_${it.url}" }) { track ->
-                            HeroCard(
-                                track = track,
-                                isPlaying = isPlaying && state.nowPlayingUrl == track.url,
-                                onClick = {
-                                    if (state.nowPlayingUrl == track.url && (player?.isPlaying == true)) {
-                                        player?.pause()
-                                    } else if (state.nowPlayingUrl == track.url) {
-                                        player?.play()
-                                    } else {
-                                        vm.play(track) { audioUrl -> player?.let { playTrack(it, track, audioUrl) } }
-                                    }
-                                }
-                            )
+            }
+
+            // ─────────── Sectioned search results (Metrolist parity) ───────────
+            if (query.isNotBlank()) {
+                val sections = state.sections
+                // Top result card (only in "All" mode and when we have one).
+                sections.topResult?.takeIf { state.searchMode == SearchMode.All }?.let { top ->
+                    item { SectionTitle("Top result") }
+                    item {
+                        TopResultCard(
+                            track = top,
+                            isPlaying = isPlaying && state.nowPlayingUrl == top.url,
+                            onClick = {
+                                if (state.nowPlayingUrl == top.url && (player?.isPlaying == true)) player?.pause()
+                                else if (state.nowPlayingUrl == top.url) player?.play()
+                                else vm.play(top) { audioUrl -> player?.let { playTrack(it, top, audioUrl) } }
+                            },
+                        )
+                    }
+                }
+                // Songs section
+                if (sections.songs.isNotEmpty() && (state.searchMode == SearchMode.All || state.searchMode == SearchMode.Songs)) {
+                    item { SectionTitle(if (state.searchMode == SearchMode.All) "Songs" else "All songs") }
+                    items(sections.songs, key = { "song_${it.url}" }) { track ->
+                        SongRow(
+                            track = track,
+                            nowPlayingUrl = state.nowPlayingUrl,
+                            isPlaying = isPlaying && state.nowPlayingUrl == track.url,
+                            loading = state.resolvingUrl == track.url,
+                            onClick = {
+                                if (state.nowPlayingUrl == track.url && (player?.isPlaying == true)) player?.pause()
+                                else if (state.nowPlayingUrl == track.url) player?.play()
+                                else vm.play(track) { audioUrl -> player?.let { playTrack(it, track, audioUrl) } }
+                            },
+                        )
+                    }
+                }
+                // Videos section
+                if (sections.videos.isNotEmpty() && (state.searchMode == SearchMode.All || state.searchMode == SearchMode.Videos)) {
+                    item { SectionTitle("Videos") }
+                    items(sections.videos, key = { "vid_${it.url}" }) { track ->
+                        SongRow(
+                            track = track,
+                            nowPlayingUrl = state.nowPlayingUrl,
+                            isPlaying = isPlaying && state.nowPlayingUrl == track.url,
+                            loading = state.resolvingUrl == track.url,
+                            onClick = {
+                                if (state.nowPlayingUrl == track.url && (player?.isPlaying == true)) player?.pause()
+                                else if (state.nowPlayingUrl == track.url) player?.play()
+                                else vm.play(track) { audioUrl -> player?.let { playTrack(it, track, audioUrl) } }
+                            },
+                        )
+                    }
+                }
+                // Albums section
+                if (sections.albums.isNotEmpty() && (state.searchMode == SearchMode.All || state.searchMode == SearchMode.Albums)) {
+                    item { SectionTitle("Albums") }
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            items(sections.albums, key = { "alb_${it.url}" }) { album ->
+                                AlbumCard(album = album)
+                            }
                         }
                     }
                 }
-                item { SectionTitle("All songs") }
-                items(state.tracks.drop(6), key = { it.url }) { track ->
-                    SongRow(
-                        track = track,
-                        nowPlayingUrl = state.nowPlayingUrl,
-                        isPlaying = isPlaying && state.nowPlayingUrl == track.url,
-                        loading = state.resolvingUrl == track.url,
-                        onClick = {
-                            if (state.nowPlayingUrl == track.url && (player?.isPlaying == true)) {
-                                player?.pause()
-                            } else if (state.nowPlayingUrl == track.url) {
-                                player?.play()
-                            } else {
-                                vm.play(track) { audioUrl -> player?.let { playTrack(it, track, audioUrl) } }
+                // Artists section
+                if (sections.artists.isNotEmpty() && (state.searchMode == SearchMode.All || state.searchMode == SearchMode.Artists)) {
+                    item { SectionTitle("Artists") }
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            items(sections.artists, key = { "art_${it.url}" }) { artist ->
+                                ArtistCard(artist = artist, onClick = { onArtistClick(artist.url) })
                             }
                         }
-                    )
+                    }
                 }
             }
             state.error?.let {
@@ -491,6 +538,146 @@ private fun SectionTitle(text: String) {
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
     )
+}
+
+// ─────────────────────── Metrolist-style search chips ───────────────────────
+
+@Composable
+private fun SearchModeChips(
+    active: com.aioweb.app.ui.viewmodel.SearchMode,
+    onPick: (com.aioweb.app.ui.viewmodel.SearchMode) -> Unit,
+) {
+    val modes = com.aioweb.app.ui.viewmodel.SearchMode.values().toList()
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(modes, key = { it.name }) { mode ->
+            FilterChip(
+                selected = mode == active,
+                onClick = { onPick(mode) },
+                label = { Text(mode.name) },
+                leadingIcon = if (mode == active) {
+                    { Icon(Icons.Default.Check, null, Modifier.size(18.dp)) }
+                } else null,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TopResultCard(track: YtTrack, isPlaying: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = track.thumbnail,
+            contentDescription = track.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                track.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                track.uploader,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = onClick) {
+            Icon(
+                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(36.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlbumCard(album: com.aioweb.app.data.newpipe.YtAlbum) {
+    Column(Modifier.width(160.dp)) {
+        AsyncImage(
+            model = album.thumbnail,
+            contentDescription = album.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(160.dp).clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            album.title,
+            color = MaterialTheme.colorScheme.onBackground,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            album.artist,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ArtistCard(
+    artist: com.aioweb.app.data.newpipe.YtArtist,
+    onClick: () -> Unit = {},
+) {
+    Column(
+        Modifier.width(140.dp).clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        AsyncImage(
+            model = artist.thumbnail,
+            contentDescription = artist.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(120.dp).clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            artist.name,
+            color = MaterialTheme.colorScheme.onBackground,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        artist.subscriberLabel?.let {
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+            )
+        }
+    }
 }
 
 @Composable

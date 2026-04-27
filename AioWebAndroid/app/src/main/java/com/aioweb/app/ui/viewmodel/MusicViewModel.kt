@@ -10,7 +10,10 @@ import com.aioweb.app.data.library.TrackDao
 import com.aioweb.app.data.library.TrackEntity
 import com.aioweb.app.data.lyrics.LrcEntry
 import com.aioweb.app.data.lyrics.LyricsRepository
+import com.aioweb.app.data.newpipe.MusicSearchSections
 import com.aioweb.app.data.newpipe.NewPipeRepository
+import com.aioweb.app.data.newpipe.YtAlbum
+import com.aioweb.app.data.newpipe.YtArtist
 import com.aioweb.app.data.newpipe.YtTrack
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +21,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/** Active search mode — drives the chip row in MusicScreen. */
+enum class SearchMode { All, Songs, Videos, Albums, Artists }
 
 data class MusicState(
     val tracks: List<YtTrack> = emptyList(),
@@ -46,6 +52,13 @@ data class MusicState(
     val liked: List<TrackEntity> = emptyList(),
     val mostPlayed: List<TrackEntity> = emptyList(),
     val isCurrentLiked: Boolean = false,
+
+    // ── Metrolist-style sectioned search ─────────────────────────────────────
+    val searchQuery: String = "",
+    val searchMode: SearchMode = SearchMode.All,
+    val sections: MusicSearchSections = MusicSearchSections(),
+    val albumResults: List<YtAlbum> = emptyList(),
+    val artistResults: List<YtArtist> = emptyList(),
 )
 
 class MusicViewModel(context: Context) : ViewModel() {
@@ -80,12 +93,79 @@ class MusicViewModel(context: Context) : ViewModel() {
         }
     }
 
+    fun setSearchMode(mode: SearchMode) {
+        if (_state.value.searchMode == mode) return
+        _state.update { it.copy(searchMode = mode) }
+        val q = _state.value.searchQuery
+        if (q.length >= 2) search(q)
+    }
+
     fun search(query: String) {
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
+            _state.update { it.copy(loading = true, error = null, searchQuery = query) }
             try {
-                val results = NewPipeRepository.searchMusic(query)
-                _state.update { it.copy(tracks = results, loading = false) }
+                when (_state.value.searchMode) {
+                    SearchMode.All -> {
+                        val sections = NewPipeRepository.searchAll(query)
+                        _state.update {
+                            it.copy(
+                                sections = sections,
+                                tracks = sections.songs,
+                                albumResults = sections.albums,
+                                artistResults = sections.artists,
+                                loading = false,
+                            )
+                        }
+                    }
+                    SearchMode.Songs -> {
+                        val songs = NewPipeRepository.searchSongs(query)
+                        _state.update {
+                            it.copy(
+                                tracks = songs,
+                                sections = MusicSearchSections(songs = songs),
+                                albumResults = emptyList(),
+                                artistResults = emptyList(),
+                                loading = false,
+                            )
+                        }
+                    }
+                    SearchMode.Videos -> {
+                        val videos = NewPipeRepository.searchVideos(query)
+                        _state.update {
+                            it.copy(
+                                tracks = videos,
+                                sections = MusicSearchSections(videos = videos),
+                                albumResults = emptyList(),
+                                artistResults = emptyList(),
+                                loading = false,
+                            )
+                        }
+                    }
+                    SearchMode.Albums -> {
+                        val albums = NewPipeRepository.searchAlbums(query)
+                        _state.update {
+                            it.copy(
+                                tracks = emptyList(),
+                                sections = MusicSearchSections(albums = albums),
+                                albumResults = albums,
+                                artistResults = emptyList(),
+                                loading = false,
+                            )
+                        }
+                    }
+                    SearchMode.Artists -> {
+                        val artists = NewPipeRepository.searchArtists(query)
+                        _state.update {
+                            it.copy(
+                                tracks = emptyList(),
+                                sections = MusicSearchSections(artists = artists),
+                                albumResults = emptyList(),
+                                artistResults = artists,
+                                loading = false,
+                            )
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 _state.update { it.copy(loading = false, error = "Search failed: ${e.message}") }
             }

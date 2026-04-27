@@ -42,6 +42,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.account.YtMusicLoginActivity"
+            android:exported="false"
+            android:label="YouTube Music Sign-In"
+            android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|screenLayout|uiMode" />
+
         <service
             android:name=".audio.MusicPlaybackService"
             android:foregroundServiceType="mediaPlayback"
