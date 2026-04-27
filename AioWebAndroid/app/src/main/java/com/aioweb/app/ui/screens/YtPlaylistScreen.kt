@@ -8,6 +8,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.*
@@ -22,17 +25,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.aioweb.app.data.ServiceLocator
+import com.aioweb.app.data.downloads.MusicDownloader
 import com.aioweb.app.data.ytmusic.YtMusicLibraryRepository
+import com.aioweb.app.data.ytmusic.YtPlayback
 import com.aioweb.app.data.ytmusic.YtmSong
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * YouTube Music playlist detail — Metrolist parity. Shows a large hero with the
- * playlist title, Play / Shuffle actions, and a vertical list of tracks.
+ * YouTube Music playlist detail — Metrolist parity: hero row, Play / Shuffle actions,
+ * per-row download icon with progress + downloaded states, offline-first playback.
  *
- * Tapping a track hands off to [onPlay] which the host wires into the music playback
- * service (TODO — currently stubbed while we refactor the single-track session).
+ * Playback routes through [YtPlayback.playSong] → the global [MusicController], so
+ * starting a song here immediately drives the app-wide MiniPlayer on every tab.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +53,12 @@ fun YtPlaylistScreen(
     val cookie by sl.settings.ytMusicCookie.collectAsState(initial = "")
     var tracks by remember(playlistId) { mutableStateOf<List<YtmSong>?>(null) }
     var error by remember(playlistId) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    // Per-URL download progress (0f..1f). Null = not downloading. Collected from the
+    // MusicDownloader singleton so we can render the in-progress ring next to each row.
+    val downloadProgress by MusicDownloader.progressFlow
+        .collectAsState(initial = emptyMap())
 
     LaunchedEffect(playlistId, cookie) {
         if (cookie.isBlank()) { error = "Not signed in."; return@LaunchedEffect }
@@ -60,6 +72,15 @@ fun YtPlaylistScreen(
         }
     }
 
+    fun playSongHandoff(s: YtmSong) {
+        // Call the caller-supplied hook for telemetry/analytics, THEN run the
+        // actual playback. Keeps the `onPlay` contract stable for any other caller.
+        onPlay(s)
+        scope.launch {
+            runCatching { YtPlayback.playSong(context, s) }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -67,6 +88,23 @@ fun YtPlaylistScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                actions = {
+                    val list = tracks
+                    if (!list.isNullOrEmpty()) {
+                        IconButton(onClick = {
+                            scope.launch {
+                                // "Download all" — walk the list and kick off a
+                                // download per track. MusicDownloader guards against
+                                // re-downloading files that already exist.
+                                list.forEach { s ->
+                                    runCatching { YtPlayback.downloadSong(context, s) }
+                                }
+                            }
+                        }) {
+                            Icon(Icons.Default.CloudDownload, "Download playlist")
+                        }
                     }
                 },
             )
@@ -96,7 +134,7 @@ fun YtPlaylistScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Button(
-                            onClick = { list.firstOrNull()?.let(onPlay) },
+                            onClick = { list.firstOrNull()?.let(::playSongHandoff) },
                             enabled = list.isNotEmpty(),
                             modifier = Modifier.weight(1f),
                         ) {
@@ -105,7 +143,7 @@ fun YtPlaylistScreen(
                             Text("Play")
                         }
                         OutlinedButton(
-                            onClick = { list.randomOrNull()?.let(onPlay) },
+                            onClick = { list.randomOrNull()?.let(::playSongHandoff) },
                             enabled = list.isNotEmpty(),
                             modifier = Modifier.weight(1f),
                         ) {
@@ -116,50 +154,100 @@ fun YtPlaylistScreen(
                     }
                 }
                 items(list, key = { "pt_${it.videoId}" }) { s ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { onPlay(s) }
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AsyncImage(
-                            model = s.thumbnail,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                s.title,
-                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onBackground,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            val sub = buildString {
-                                append(s.artist)
-                                if (!s.album.isNullOrBlank()) append(" · ").also { append(s.album) }
-                            }
-                            Text(
-                                sub,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Icon(
-                            Icons.Default.PlayArrow, "Play",
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
+                    PlaylistTrackRow(
+                        song = s,
+                        isDownloading = downloadProgress["https://music.youtube.com/watch?v=${s.videoId}"],
+                        onPlay = { playSongHandoff(s) },
+                        onDownload = {
+                            scope.launch { runCatching { YtPlayback.downloadSong(context, s) } }
+                        },
+                    )
                 }
                 item { Spacer(Modifier.height(40.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistTrackRow(
+    song: YtmSong,
+    isDownloading: Float?,
+    onPlay: () -> Unit,
+    onDownload: () -> Unit,
+) {
+    val context = LocalContext.current
+    // Snapshot "is this song downloaded" reactively — poll on recomposition so the
+    // icon flips to `DownloadDone` the moment the file lands.
+    var downloaded by remember(song.videoId) {
+        mutableStateOf(YtPlayback.isDownloaded(context, song))
+    }
+    LaunchedEffect(song.videoId, isDownloading) {
+        // Re-check after the progress flow drops to null (= download finished/aborted).
+        if (isDownloading == null) downloaded = YtPlayback.isDownloaded(context, song)
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onPlay)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = song.thumbnail,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                song.title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val sub = buildString {
+                append(song.artist)
+                if (!song.album.isNullOrBlank()) { append(" · "); append(song.album) }
+            }
+            Text(
+                sub,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        // Download state: in-progress ring ▸ downloaded check ▸ download icon.
+        when {
+            isDownloading != null -> Box(
+                Modifier.size(40.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    progress = isDownloading.coerceIn(0f, 1f),
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            downloaded -> IconButton(onClick = {}) {
+                Icon(
+                    Icons.Default.DownloadDone,
+                    contentDescription = "Downloaded",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            else -> IconButton(onClick = onDownload) {
+                Icon(
+                    Icons.Default.Download,
+                    contentDescription = "Download",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

@@ -209,7 +209,13 @@ fun LibraryScreen(
                             }
                         }
                         items(ytLibrary.likedSongs, span = { GridItemSpan(2) }) { s ->
-                            YtSongRow(s) { /* TODO playback */ }
+                            YtSongRow(s) {
+                                scope.launch {
+                                    runCatching {
+                                        com.aioweb.app.data.ytmusic.YtPlayback.playSong(context, s)
+                                    }
+                                }
+                            }
                         }
                         items(liked, span = { GridItemSpan(2) }) { e -> LibTrackRow(e) }
                     }

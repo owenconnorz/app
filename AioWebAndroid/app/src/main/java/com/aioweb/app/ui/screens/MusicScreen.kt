@@ -52,7 +52,10 @@ private val SUGGESTIONS = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.media3.common.util.UnstableApi::class)
 @Composable
-fun MusicScreen(onArtistClick: (String) -> Unit = {}) {
+fun MusicScreen(
+    onArtistClick: (String) -> Unit = {},
+    onOpenPlaylist: (id: String, title: String) -> Unit = { _, _ -> },
+) {
     val context = LocalContext.current
     val vm: MusicViewModel = viewModel(factory = MusicViewModel.factory(context))
     val state by vm.state.collectAsState()
@@ -1000,11 +1003,14 @@ private fun YtMoodChipRow(chips: List<com.aioweb.app.data.ytmusic.MoodChip>) {
 }
 
 @Composable
-private fun YtHomePlaylistCard(pl: com.aioweb.app.data.ytmusic.YtmPlaylist) {
+private fun YtHomePlaylistCard(
+    pl: com.aioweb.app.data.ytmusic.YtmPlaylist,
+    onClick: () -> Unit = {},
+) {
     Column(
         Modifier
             .width(150.dp)
-            .clickable { /* TODO: open YtPlaylistScreen */ },
+            .clickable(onClick = onClick),
     ) {
         AsyncImage(
             model = pl.thumbnail,
@@ -1037,10 +1043,16 @@ private fun YtHomePlaylistCard(pl: com.aioweb.app.data.ytmusic.YtmPlaylist) {
 
 @Composable
 private fun YtHomeSongCard(s: com.aioweb.app.data.ytmusic.YtmSong) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     Column(
         Modifier
             .width(150.dp)
-            .clickable { /* TODO: resolve videoId -> stream -> play */ },
+            .clickable {
+                scope.launch {
+                    runCatching { com.aioweb.app.data.ytmusic.YtPlayback.playSong(context, s) }
+                }
+            },
     ) {
         AsyncImage(
             model = s.thumbnail,

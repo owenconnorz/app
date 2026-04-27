@@ -156,6 +156,11 @@ fun AioWebApp() {
                             val u = URLEncoder.encode(url, "UTF-8")
                             nav.navigate("artist/$u")
                         },
+                        onOpenPlaylist = { id, title ->
+                            val i = URLEncoder.encode(id, "UTF-8")
+                            val t = URLEncoder.encode(title, "UTF-8")
+                            nav.navigate("yt-playlist/$i/$t")
+                        },
                     )
                 }
                 composable(
