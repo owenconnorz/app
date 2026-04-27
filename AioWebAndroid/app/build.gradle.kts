@@ -169,4 +169,10 @@ dependencies {
     // Androidx Palette — extracts dominant color from album art for Metrolist-style
     // gradient backgrounds in the Now Playing sheet.
     implementation("androidx.palette:palette-ktx:1.0.0")
+
+    // Mozilla Rhino — pure-JVM JavaScript engine used to run Nuvio's local-scraper
+    // providers (the .js files from yoruix/nuvio-providers, phisher98/...).
+    // We use the Android-flavoured fork that ships with Class.forName / reflection
+    // tweaks so it doesn't blow up under the Android Runtime.
+    implementation("com.faendir.rhino:rhino-android:1.6.0")
 }

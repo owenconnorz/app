@@ -44,6 +44,9 @@ fun PluginsScreen(onBack: () -> Unit) {
     var showAddStremio by remember { mutableStateOf(false) }
     var stremioUrl by remember { mutableStateOf("") }
 
+    var showAddNuvio by remember { mutableStateOf(false) }
+    var nuvioRepoInput by remember { mutableStateOf("") }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -136,6 +139,52 @@ fun PluginsScreen(onBack: () -> Unit) {
             }
             items(state.stremioAddons, key = { it.manifestUrl }) { addon ->
                 StremioAddonRow(addon, onRemove = { vm.removeStremioAddon(addon.manifestUrl) })
+            }
+            item { Spacer(Modifier.height(8.dp)) }
+
+            // ── Nuvio JS providers ────────────────────────────
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel("Nuvio providers (${state.nuvioProviders.size})")
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { showAddNuvio = true }) {
+                        Icon(Icons.Default.Add, null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Browse repo")
+                    }
+                }
+            }
+            if (state.nuvioProviders.isEmpty()) {
+                item {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(16.dp),
+                    ) {
+                        Text(
+                            "No Nuvio providers installed",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Paste a Nuvio provider repo URL (the one with manifest.json listing .js files). " +
+                                "Examples:\n" +
+                                "• https://raw.githubusercontent.com/yoruix/nuvio-providers/main/\n" +
+                                "• https://raw.githubusercontent.com/phisher98/phisher-nuvio-providers/main/\n\n" +
+                                "Nuvio providers run inside an embedded JavaScript engine (Mozilla " +
+                                "Rhino) — no native libraries needed. Some advanced providers may not " +
+                                "be fully compatible.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            items(state.nuvioProviders, key = { it.id }) { p ->
+                NuvioProviderRow(p, onRemove = { vm.uninstallNuvioProvider(p.id) })
             }
             item { Spacer(Modifier.height(8.dp)) }
 
@@ -268,6 +317,82 @@ fun PluginsScreen(onBack: () -> Unit) {
             },
         )
     }
+
+    if (showAddNuvio) {
+        AlertDialog(
+            onDismissRequest = { showAddNuvio = false },
+            title = { Text("Browse Nuvio repo") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = nuvioRepoInput, onValueChange = { nuvioRepoInput = it },
+                        label = { Text("Repo URL") },
+                        placeholder = { Text("https://raw.githubusercontent.com/yoruix/nuvio-providers/main/") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { vm.loadNuvioRepo(nuvioRepoInput) }) {
+                            if (state.loadingNuvioRepo) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                            else Text("Load")
+                        }
+                    }
+                    val mf = state.nuvioRepoManifest
+                    if (mf != null) {
+                        Text(
+                            "${mf.name ?: "Repo"} · ${mf.providers.size} providers",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Column(
+                            Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            mf.providers.forEach { entry ->
+                                val installing = entry.id in state.installingNuvioIds
+                                val already = state.nuvioProviders.any { it.id == entry.id }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .padding(8.dp),
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(entry.name, style = MaterialTheme.typography.titleMedium)
+                                        if (!entry.description.isNullOrBlank()) {
+                                            Text(
+                                                entry.description, maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                    when {
+                                        installing -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        already -> Icon(
+                                            androidx.compose.material.icons.Icons.Default.CheckCircle,
+                                            "Installed",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                        else -> TextButton(onClick = { vm.installNuvioProvider(entry) }) {
+                                            Text("Install")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAddNuvio = false; nuvioRepoInput = "" }) { Text("Done") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -339,6 +464,55 @@ private fun InstalledRow(p: InstalledPlugin, onUninstall: () -> Unit) {
         }
         IconButton(onClick = onUninstall) {
             Icon(Icons.Default.Delete, "Uninstall", tint = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+@Composable
+private fun NuvioProviderRow(
+    p: com.aioweb.app.data.nuvio.InstalledNuvioProvider,
+    onRemove: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(12.dp),
+    ) {
+        if (!p.logo.isNullOrBlank()) {
+            coil.compose.AsyncImage(
+                model = p.logo,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+        } else {
+            Icon(
+                Icons.Default.Extension, null,
+                tint = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(36.dp),
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                p.name, color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "Nuvio provider · JS",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Default.Delete, "Remove", tint = MaterialTheme.colorScheme.error)
         }
     }
 }

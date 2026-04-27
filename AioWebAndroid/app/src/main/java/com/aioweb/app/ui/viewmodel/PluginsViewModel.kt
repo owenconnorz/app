@@ -4,6 +4,10 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.aioweb.app.data.nuvio.InstalledNuvioProvider
+import com.aioweb.app.data.nuvio.NuvioProviderEntry
+import com.aioweb.app.data.nuvio.NuvioRepoManifest
+import com.aioweb.app.data.nuvio.NuvioRepository
 import com.aioweb.app.data.plugins.CloudStreamPlugin
 import com.aioweb.app.data.plugins.CloudStreamRepo
 import com.aioweb.app.data.plugins.InstalledPlugin
@@ -25,6 +29,11 @@ data class PluginsState(
     val installingNames: Set<String> = emptySet(),
     val stremioAddons: List<InstalledStremioAddon> = emptyList(),
     val addingStremio: Boolean = false,
+    val nuvioProviders: List<InstalledNuvioProvider> = emptyList(),
+    val nuvioRepoUrl: String = "",
+    val nuvioRepoManifest: NuvioRepoManifest? = null,
+    val loadingNuvioRepo: Boolean = false,
+    val installingNuvioIds: Set<String> = emptySet(),
     val error: String? = null,
     val info: String? = null,
 )
@@ -32,14 +41,24 @@ data class PluginsState(
 class PluginsViewModel(
     private val repo: PluginRepository,
     private val stremio: StremioRepository,
+    private val nuvio: NuvioRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(PluginsState())
     val state: StateFlow<PluginsState> = _state.asStateFlow()
 
     init {
         viewModelScope.launch {
-            combine(repo.repos, repo.installed, stremio.addons) { r, i, s -> Triple(r, i, s) }
-                .collect { (r, i, s) -> _state.update { it.copy(repos = r, installed = i, stremioAddons = s) } }
+            combine(repo.repos, repo.installed, stremio.addons, nuvio.installed) { r, i, s, n ->
+                arrayOf(r, i, s, n)
+            }.collect { arr ->
+                @Suppress("UNCHECKED_CAST")
+                _state.update { it.copy(
+                    repos = arr[0] as List<CloudStreamRepo>,
+                    installed = arr[1] as List<InstalledPlugin>,
+                    stremioAddons = arr[2] as List<InstalledStremioAddon>,
+                    nuvioProviders = arr[3] as List<InstalledNuvioProvider>,
+                ) }
+            }
         }
     }
 
@@ -125,6 +144,42 @@ class PluginsViewModel(
         stremio.removeAddon(manifestUrl)
     }
 
+    /** Pull a Nuvio provider repo `manifest.json` and surface the listing. */
+    fun loadNuvioRepo(url: String) = viewModelScope.launch {
+        if (url.isBlank()) {
+            _state.update { it.copy(error = "Nuvio repo URL is required") }
+            return@launch
+        }
+        _state.update { it.copy(loadingNuvioRepo = true, nuvioRepoUrl = url, nuvioRepoManifest = null, error = null) }
+        try {
+            val mf = nuvio.fetchManifest(url)
+            _state.update { it.copy(loadingNuvioRepo = false, nuvioRepoManifest = mf) }
+        } catch (e: Exception) {
+            _state.update { it.copy(loadingNuvioRepo = false, error = "Nuvio: ${e.message}") }
+        }
+    }
+
+    fun installNuvioProvider(entry: NuvioProviderEntry) = viewModelScope.launch {
+        val repoUrl = _state.value.nuvioRepoUrl
+        _state.update { it.copy(installingNuvioIds = it.installingNuvioIds + entry.id, error = null) }
+        try {
+            val rec = nuvio.installProvider(repoUrl, entry)
+            _state.update { it.copy(
+                installingNuvioIds = it.installingNuvioIds - entry.id,
+                info = "Installed Nuvio provider: ${rec.name}",
+            ) }
+        } catch (e: Exception) {
+            _state.update { it.copy(
+                installingNuvioIds = it.installingNuvioIds - entry.id,
+                error = "Nuvio install failed: ${e.message}",
+            ) }
+        }
+    }
+
+    fun uninstallNuvioProvider(id: String) = viewModelScope.launch {
+        nuvio.uninstall(id)
+    }
+
     fun clearMessages() {
         _state.update { it.copy(error = null, info = null) }
     }
@@ -136,6 +191,7 @@ class PluginsViewModel(
                 return PluginsViewModel(
                     PluginRepository(context.applicationContext),
                     StremioRepository(context.applicationContext),
+                    NuvioRepository(context.applicationContext),
                 ) as T
             }
         }

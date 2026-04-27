@@ -25,6 +25,8 @@ import coil.compose.AsyncImage
 import com.aioweb.app.data.ServiceLocator
 import com.aioweb.app.data.api.TmdbMovie
 import com.aioweb.app.data.api.TmdbVideo
+import com.aioweb.app.data.nuvio.InstalledNuvioProvider
+import com.aioweb.app.data.nuvio.NuvioStream
 import com.aioweb.app.data.stremio.InstalledStremioAddon
 import com.aioweb.app.data.stremio.StremioStream
 import com.aioweb.app.player.PlayerSource
@@ -58,6 +60,7 @@ fun MovieDetailScreen(
     var error by remember { mutableStateOf<String?>(null) }
 
     val installedAddons by sl.stremio.addons.collectAsState(initial = emptyList())
+    val installedNuvio by sl.nuvio.installed.collectAsState(initial = emptyList())
     var resolving by remember { mutableStateOf(false) }
     var resolverMessage by remember { mutableStateOf<String?>(null) }
 
@@ -79,23 +82,35 @@ fun MovieDetailScreen(
             resolverMessage = "Loading IMDB id… try again in a second."
             return
         }
-        if (installedAddons.isEmpty()) {
-            resolverMessage = "No Stremio addons installed. Add one from Settings → Plugins → Stremio addons."
+        if (installedAddons.isEmpty() && installedNuvio.isEmpty()) {
+            resolverMessage = "No Stremio addons or Nuvio providers installed. Add some from Settings → Plugins."
             return
         }
         scope.launch {
             resolving = true
             resolverMessage = null
             try {
-                val all = installedAddons.map { addon ->
-                    async {
-                        runCatching { sl.stremio.fetchStreams(addon, "movie", tt) }
-                            .map { streams -> streams.mapNotNull { it.toPlayerSource(addon) } }
-                            .getOrDefault(emptyList())
-                    }
-                }.awaitAll().flatten()
+                // Fan out to BOTH systems in parallel: Stremio addons keyed by IMDB tt,
+                // Nuvio JS providers keyed by TMDB id.
+                val stremioJob = async {
+                    installedAddons.map { addon ->
+                        async {
+                            runCatching { sl.stremio.fetchStreams(addon, "movie", tt) }
+                                .map { streams -> streams.mapNotNull { it.toPlayerSource(addon) } }
+                                .getOrDefault(emptyList())
+                        }
+                    }.awaitAll().flatten()
+                }
+                val nuvioJob = async {
+                    runCatching {
+                        sl.nuvio.resolveAll(movieId.toString(), "movie")
+                            .map { (provider, stream) -> stream.toPlayerSource(provider) }
+                    }.getOrDefault(emptyList())
+                }
+                val all = stremioJob.await() + nuvioJob.await()
                 if (all.isEmpty()) {
-                    resolverMessage = "No streams found across ${installedAddons.size} addon(s)."
+                    val total = installedAddons.size + installedNuvio.size
+                    resolverMessage = "No streams found across $total source(s)."
                     return@launch
                 }
                 val sorted = all.sortedByDescending { it.qualityScore() }
@@ -157,8 +172,8 @@ fun MovieDetailScreen(
 
                 // ── ONE button. ──
                 PlayMovieCta(
-                    addonCount = installedAddons.size,
-                    enabled = imdbId != null && installedAddons.isNotEmpty() && !resolving,
+                    addonCount = installedAddons.size + installedNuvio.size,
+                    enabled = imdbId != null && (installedAddons.isNotEmpty() || installedNuvio.isNotEmpty()) && !resolving,
                     loading = resolving,
                     onClick = { playMovie() },
                 )
@@ -309,4 +324,19 @@ private fun PlayerSource.qualityScore(): Int {
         else -> 0
     }
     return q * 10 + if (!isMagnet) 1 else 0
+}
+
+// ─────────────────────── Nuvio JS provider → PlayerSource ───────────────────────
+private fun NuvioStream.toPlayerSource(provider: InstalledNuvioProvider): PlayerSource {
+    val label = title?.takeIf { it.isNotBlank() }
+        ?: name?.takeIf { it.isNotBlank() }
+        ?: "Stream"
+    return PlayerSource(
+        id = "nuvio::${provider.id}::${url.hashCode()}::${label.hashCode()}",
+        url = url,
+        label = label,
+        addonName = provider.name,
+        qualityTag = quality,
+        isMagnet = url.startsWith("magnet:"),
+    )
 }
