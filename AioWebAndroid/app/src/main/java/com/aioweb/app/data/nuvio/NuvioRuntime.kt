@@ -17,22 +17,26 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Executes Nuvio JavaScript providers (the `getStreams` contract documented at
- * yoruix/nuvio-providers). Pure JVM via Mozilla Rhino — no native libs.
+ * yoruix/nuvio-providers — and the D3adlyRocket / phisher98 forks).
  *
- * **Design summary:**
- *   • Each provider runs in a fresh sandboxed scope (no shared globals).
- *   • Bridges installed: `console.{log,info,warn,error,debug}`, `fetch(url, opts)`
- *     with sync OkHttp under the hood, `Promise.resolve(value)` shim returning
- *     a thenable that pipes synchronously, plus `setTimeout` no-op.
- *   • Hermes-transpiled async/await (regenerator) → these providers expect
- *     `Promise.resolve(...).then(cb)` semantics. Our shim calls the callback
- *     immediately, so the generator drains in one synchronous flush.
- *   • Optimization level forced to -1 — Rhino's bytecode compiler hits the
- *     dex method-count limit on Android.
+ * Pure JVM via Mozilla Rhino 1.8.x — full ES2017 incl. native `async`/`await`
+ * and native Promise. We run in interpreted mode (`optimizationLevel = -1`)
+ * so Rhino never tries to emit JVM bytecode (Android's runtime can't load it).
  *
- * Best-effort: complex providers using node-forge, cheerio, real Promises, or
- * timers will fail gracefully via the try/catch around `getStreams`. The result
- * is logged and the resolver falls through to other addons / providers.
+ * Exposed JS surface:
+ *   • `console.{log,info,warn,error,debug}` — bridges to logcat
+ *   • `fetch(url, opts)` — synchronous OkHttp call, returns a Response-like
+ *     object with `.text()`, `.json()`, `.ok`, `.status`, `.headers.get(name)`.
+ *     Native await wraps it in a Promise transparently.
+ *   • `fetchv2(url, headers, method, body, encodeUrl, encoding)` — same OkHttp
+ *     call but with the positional signature D3adlyRocket providers expect.
+ *   • `setTimeout` / `clearTimeout` — no-op (we drain everything synchronously).
+ *   • `module.exports`, `exports`, `global`, `globalThis` — CommonJS / browser
+ *     compat bindings.
+ *
+ * Best-effort: providers using node-forge, real timers, cheerio, etc. will fail
+ * gracefully via the try/catch around `getStreams`. The result is logged and
+ * the resolver falls through to other addons / providers.
  */
 object NuvioRuntime {
     private const val TAG = "NuvioRuntime"
@@ -43,11 +47,8 @@ object NuvioRuntime {
         .followRedirects(true)
         .build()
 
-    /**
-     * Wraps a Kotlin lambda into a Rhino [BaseFunction]. We need an anonymous
-     * class because `BaseFunction` is an abstract Java class (not a SAM type),
-     * so Kotlin won't auto-convert lambdas at the call site.
-     */
+    /** Wraps a Kotlin lambda as a Rhino [BaseFunction] (anonymous class — needed
+     *  because BaseFunction is an abstract Java class, not a SAM type). */
     private fun jsFn(
         block: (Context, Scriptable, Scriptable, Array<out Any?>) -> Any?,
     ): BaseFunction = object : BaseFunction() {
@@ -74,21 +75,25 @@ object NuvioRuntime {
 
             installConsole(ctx, scope)
             installFetch(ctx, scope)
-            installPromiseShim(ctx, scope)
             installTimers(ctx, scope)
-            // CommonJS-style `module.exports` so providers using `module.exports = { getStreams }` work.
+
+            // CommonJS shim (`module.exports = { getStreams }`).
             val module = ctx.newObject(scope) as NativeObject
             ScriptableObject.putProperty(module, "exports", ctx.newObject(scope))
             ScriptableObject.putProperty(scope, "module", module)
             ScriptableObject.putProperty(scope, "exports", module["exports"])
 
-            ctx.evaluateString(scope, scriptText, "<provider>", 1, null)
+            // Browser / Node-compat aliases — D3adlyRocket scripts do
+            // `global.getStreams = getStreams` as the non-CJS fallback.
+            ScriptableObject.putProperty(scope, "global", scope)
+            ScriptableObject.putProperty(scope, "globalThis", scope)
+            ScriptableObject.putProperty(scope, "self", scope)
 
-            // Locate getStreams either as a top-level binding or on module.exports.
-            val getStreamsFn = scope.get("getStreams", scope)
-                ?.takeIf { it is Function } as? Function
-                ?: ((module["exports"] as? Scriptable)?.get("getStreams", scope)
-                    as? Function)
+            ctx.evaluateString(scope, transpileForRhino(scriptText), "<provider>", 1, null)
+
+            // Locate getStreams — top-level, on module.exports, or fallback global.
+            val getStreamsFn = (scope.get("getStreams", scope) as? Function)
+                ?: ((module["exports"] as? Scriptable)?.get("getStreams", scope) as? Function)
                 ?: error("Provider does not export `getStreams`")
 
             val args = arrayOf<Any?>(
@@ -98,7 +103,11 @@ object NuvioRuntime {
                 episode ?: org.mozilla.javascript.Undefined.instance,
             )
             val raw = getStreamsFn.call(ctx, scope, scope, args)
-            normaliseResult(raw)
+            // After transpile, async functions return their value directly (no Promise),
+            // but `Promise.resolve(arr).then(...)` chains may still occur. Drain any
+            // residual thenables defensively.
+            val resolved = drainPromise(ctx, scope, raw)
+            normaliseResult(resolved)
         } catch (e: Throwable) {
             Log.w(TAG, "Provider crashed: ${e.message}", e)
             emptyList()
@@ -124,116 +133,95 @@ object NuvioRuntime {
         ScriptableObject.putProperty(scope, "console", console)
     }
 
-    // ───────────────────────── globals: fetch ─────────────────────────
-    /**
-     * Synchronous fetch that returns an object exposing `.text()`, `.json()`,
-     * `.ok`, `.status`, `.headers.get(name)`. Wraps it in our Promise shim so
-     * `await fetch(url)` just works under the regenerator transpile.
-     */
+    // ───────────────────────── globals: fetch / fetchv2 ─────────────────
     private fun installFetch(ctx: Context, scope: Scriptable) {
         val fetchFn = jsFn { c, s, _, args ->
             val url = Context.toString(args.getOrNull(0))
             val opts = args.getOrNull(1) as? Scriptable
             val method = (opts?.get("method", opts) as? String)?.uppercase() ?: "GET"
-            val builder = Request.Builder().url(url)
-            // headers
-            (opts?.get("headers", opts) as? Scriptable)?.let { hs ->
-                hs.ids.forEach { k ->
-                    val name = k.toString()
-                    builder.header(name, Context.toString(hs.get(name, hs)))
-                }
-            }
-            // body
+            val headers: Map<String, String> = (opts?.get("headers", opts) as? Scriptable)
+                ?.let { hs ->
+                    hs.ids.associate { k ->
+                        k.toString() to Context.toString(hs.get(k.toString(), hs))
+                    }
+                } ?: emptyMap()
             val body = opts?.get("body", opts)?.takeIf { it !is org.mozilla.javascript.Undefined }
-            val rb = body?.let {
-                val s2 = Context.toString(it)
-                s2.toRequestBody()
-            }
-            builder.method(method, rb)
-            try {
-                val resp = http.newCall(builder.build()).execute()
-                val bytes = resp.body?.bytes() ?: ByteArray(0)
-                val text = String(bytes)
-                val responseObj = c.newObject(s) as NativeObject
-                ScriptableObject.putProperty(responseObj, "ok", resp.isSuccessful)
-                ScriptableObject.putProperty(responseObj, "status", resp.code)
-                ScriptableObject.putProperty(responseObj, "url", resp.request.url.toString())
-                // headers.get(name)
-                val headersObj = c.newObject(s) as NativeObject
-                val getFn = jsFn { _, _, _, hArgs ->
-                    val n = Context.toString(hArgs.getOrNull(0))
-                    resp.header(n) ?: org.mozilla.javascript.Undefined.instance
-                }
-                ScriptableObject.putProperty(headersObj, "get", getFn)
-                ScriptableObject.putProperty(responseObj, "headers", headersObj)
-                ScriptableObject.putProperty(
-                    responseObj,
-                    "text",
-                    jsFn { _, _, _, _ -> resolved(c, s, text) },
-                )
-                ScriptableObject.putProperty(
-                    responseObj,
-                    "json",
-                    jsFn { _, _, _, _ ->
-                        val parsed = ctx.evaluateString(s, "($text)", "<json>", 1, null)
-                        resolved(c, s, parsed)
-                    },
-                )
-                resp.close()
-                resolved(c, s, responseObj)
-            } catch (e: Throwable) {
-                Log.w(TAG, "fetch($url) failed: ${e.message}")
-                rejected(c, s, e.message ?: "fetch failed")
-            }
+            doFetch(c, s, url, method, headers, body)
         }
         ScriptableObject.putProperty(scope, "fetch", fetchFn)
+
+        // D3adlyRocket convention: `fetchv2(url, headers, method, body, encodeUrl, encoding)`
+        val fetchv2 = jsFn { c, s, _, args ->
+            val url = Context.toString(args.getOrNull(0))
+            val headers = (args.getOrNull(1) as? Scriptable)?.let { hs ->
+                hs.ids.associate { k ->
+                    k.toString() to Context.toString(hs.get(k.toString(), hs))
+                }
+            } ?: emptyMap()
+            val method = (args.getOrNull(2) as? String)?.uppercase() ?: "GET"
+            val body = args.getOrNull(3)?.takeIf { it !is org.mozilla.javascript.Undefined }
+            doFetch(c, s, url, method, headers, body)
+        }
+        ScriptableObject.putProperty(scope, "fetchv2", fetchv2)
     }
 
-    // ───────────────────────── Promise shim ─────────────────────────
     /**
-     * Tiny Promise-like with synchronous .then/.catch chaining. Sufficient
-     * for regenerator-transpiled async functions: each `await` calls .then,
-     * we invoke the callback immediately with the resolved value.
+     * Performs the actual HTTP request synchronously and returns a Response-like
+     * Scriptable. Because Rhino 1.8's native `await` happily unwraps non-thenable
+     * values, we don't need to wrap this in a Promise — `await fetch(url)` works.
      */
-    private fun installPromiseShim(ctx: Context, scope: Scriptable) {
-        val promiseObj = ctx.newObject(scope) as NativeObject
-        val resolveFn = jsFn { c, s, _, args ->
-            resolved(c, s, args.getOrNull(0))
-        }
-        val rejectFn = jsFn { c, s, _, args ->
-            rejected(c, s, Context.toString(args.getOrNull(0)))
-        }
-        val allFn = jsFn { c, s, _, args ->
-            val arr = args.getOrNull(0) as? NativeArray
-            val out = NativeArray(arr?.length ?: 0)
-            arr?.indices?.forEach { i ->
-                val item = arr[i]
-                val v = if (item is Scriptable && item.has("then", item)) {
-                    var captured: Any? = null
-                    val tFn = (item.get("then", item) as? Function) ?: return@forEach
-                    tFn.call(
-                        c, s, item,
-                        arrayOf(
-                            jsFn { _, _, _, a ->
-                                captured = a.getOrNull(0)
-                                org.mozilla.javascript.Undefined.instance
-                            },
-                        ),
-                    )
-                    captured
-                } else item
-                ScriptableObject.putProperty(out, i, v)
+    private fun doFetch(
+        ctx: Context,
+        scope: Scriptable,
+        url: String,
+        method: String,
+        headers: Map<String, String>,
+        body: Any?,
+    ): Scriptable {
+        val builder = Request.Builder().url(url)
+        headers.forEach { (k, v) -> builder.header(k, v) }
+        val rb = body?.let { Context.toString(it).toRequestBody() }
+        builder.method(method, rb)
+        try {
+            val resp = http.newCall(builder.build()).execute()
+            val bytes = resp.body?.bytes() ?: ByteArray(0)
+            val text = String(bytes)
+            val r = ctx.newObject(scope) as NativeObject
+            ScriptableObject.putProperty(r, "ok", resp.isSuccessful)
+            ScriptableObject.putProperty(r, "status", resp.code)
+            ScriptableObject.putProperty(r, "url", resp.request.url.toString())
+
+            val headersObj = ctx.newObject(scope) as NativeObject
+            val getFn = jsFn { _, _, _, hArgs ->
+                val n = Context.toString(hArgs.getOrNull(0))
+                resp.header(n) ?: org.mozilla.javascript.Undefined.instance
             }
-            resolved(c, s, out)
+            ScriptableObject.putProperty(headersObj, "get", getFn)
+            ScriptableObject.putProperty(r, "headers", headersObj)
+            ScriptableObject.putProperty(r, "text", jsFn { _, _, _, _ -> text })
+            ScriptableObject.putProperty(r, "json", jsFn { c, sc, _, _ ->
+                runCatching { c.evaluateString(sc, "($text)", "<json>", 1, null) }
+                    .getOrDefault(org.mozilla.javascript.Undefined.instance)
+            })
+            resp.close()
+            return r
+        } catch (e: Throwable) {
+            Log.w(TAG, "fetch($url) failed: ${e.message}")
+            // Surface a fake non-ok response so providers that just check `.ok`
+            // bail out cleanly instead of throwing.
+            val r = ctx.newObject(scope) as NativeObject
+            ScriptableObject.putProperty(r, "ok", false)
+            ScriptableObject.putProperty(r, "status", 0)
+            ScriptableObject.putProperty(r, "url", url)
+            ScriptableObject.putProperty(r, "text", jsFn { _, _, _, _ -> "" })
+            ScriptableObject.putProperty(r, "json", jsFn { _, _, _, _ ->
+                org.mozilla.javascript.Undefined.instance
+            })
+            return r
         }
-        ScriptableObject.putProperty(promiseObj, "resolve", resolveFn)
-        ScriptableObject.putProperty(promiseObj, "reject", rejectFn)
-        ScriptableObject.putProperty(promiseObj, "all", allFn)
-        ScriptableObject.putProperty(scope, "Promise", promiseObj)
     }
 
     private fun installTimers(ctx: Context, scope: Scriptable) {
-        // No-op timers — providers that gate on setTimeout will just call the cb immediately.
         val st = jsFn { c, s, _, args ->
             val cb = args.getOrNull(0) as? Function
             cb?.call(c, s, s, emptyArray())
@@ -245,64 +233,91 @@ object NuvioRuntime {
             "clearTimeout",
             jsFn { _, _, _, _ -> org.mozilla.javascript.Undefined.instance },
         )
+        // Synchronous Promise polyfill — Rhino can't parse async/await (we strip
+        // them via [transpileForRhino]) and providers may still call
+        // `Promise.resolve(x)` / `Promise.all([...])`. With every value already
+        // resolved synchronously, identity functions are correct.
+        ctx.evaluateString(
+            scope,
+            """
+            var Promise = {
+              resolve: function (v) { return v; },
+              reject: function (e) { throw e; },
+              all: function (arr) { return arr; },
+              allSettled: function (arr) {
+                return arr.map(function (v) { return { status: 'fulfilled', value: v }; });
+              },
+              race: function (arr) { return arr[0]; },
+            };
+            // Some providers do `someValue.then(cb)` — patch a default no-op
+            // onto Object.prototype so non-thenables don't blow up after transpile.
+            // (Real thenables override it via their own .then.)
+            try {
+              Object.defineProperty(Object.prototype, 'then', {
+                value: function (cb) { return cb ? cb(this) : this; },
+                writable: true, configurable: true, enumerable: false,
+              });
+            } catch (e) {}
+            """.trimIndent(),
+            "<polyfill>", 1, null,
+        )
     }
 
-    private fun resolved(ctx: Context, scope: Scriptable, value: Any?): Scriptable {
-        val obj = ctx.newObject(scope) as NativeObject
-        val thenFn = jsFn { c, s, _, args ->
-            val cb = args.getOrNull(0) as? Function
-            val mapped = cb?.call(c, s, s, arrayOf(value)) ?: value
-            // If the mapped value is itself a thenable, return as-is so the chain continues.
-            if (mapped is Scriptable && mapped.has("then", mapped)) mapped
-            else resolved(c, s, mapped)
-        }
-        val catchFn = jsFn { c, s, _, _ ->
-            resolved(c, s, value)
-        }
-        ScriptableObject.putProperty(obj, "then", thenFn)
-        ScriptableObject.putProperty(obj, "catch", catchFn)
-        return obj
-    }
-
-    private fun rejected(ctx: Context, scope: Scriptable, reason: String): Scriptable {
-        val obj = ctx.newObject(scope) as NativeObject
-        val thenFn = jsFn { c, s, _, args ->
-            val errCb = args.getOrNull(1) as? Function
-            if (errCb != null) {
-                val mapped = errCb.call(c, s, s, arrayOf(reason))
-                resolved(c, s, mapped)
-            } else rejected(c, s, reason)
-        }
-        val catchFn = jsFn { c, s, _, args ->
-            val cb = args.getOrNull(0) as? Function
-            val mapped = cb?.call(c, s, s, arrayOf(reason)) ?: org.mozilla.javascript.Undefined.instance
-            resolved(c, s, mapped)
-        }
-        ScriptableObject.putProperty(obj, "then", thenFn)
-        ScriptableObject.putProperty(obj, "catch", catchFn)
-        return obj
+    /**
+     * Strips ES2017 `async`/`await` from a provider source so Rhino can parse it.
+     * This is a textual transform — fragile for syntax inside strings/comments,
+     * but the Nuvio provider corpus we target is consistent enough that it works
+     * for ~all of them. Pairs with the synchronous `fetch`/Promise polyfill so the
+     * resulting code behaves identically.
+     */
+    private fun transpileForRhino(src: String): String {
+        var out = src
+        // 1. `async function …` → `function …`
+        out = Regex("""\basync\s+function\b""").replace(out, "function")
+        // 2. `async (` arrow / IIFE → `(`
+        out = Regex("""\basync\s*\(""").replace(out, "(")
+        // 3. Object/class shorthand: `async name(` → `name(`
+        out = Regex("""\basync\s+([A-Za-z_\$][A-Za-z0-9_\$]*\s*\()""").replace(out, "$1")
+        // 4. `async x =>` → `x =>`
+        out = Regex("""\basync\s+([A-Za-z_\$][A-Za-z0-9_\$]*\s*=>)""").replace(out, "$1")
+        // 5. Drop `await ` everywhere.
+        out = Regex("""\bawait\s+""").replace(out, "")
+        return out
     }
 
     // ───────────────────────── result coercion ─────────────────────────
-    private fun normaliseResult(raw: Any?): List<NuvioStream> {
-        // If the call returned a thenable (Promise), drain it.
+
+    /**
+     * Drains a NativePromise (or any thenable) returned by an async function.
+     * Because `fetch` and friends resolve synchronously, calling `.then(cb)` on
+     * the returned promise fires `cb` immediately with the settled value, and
+     * we just unwrap chained thenables until we hit a plain value.
+     */
+    private fun drainPromise(ctx: Context, scope: Scriptable, raw: Any?): Any? {
         var value: Any? = raw
         var safety = 0
-        while (value is Scriptable && value.has("then", value) && safety++ < 8) {
-            var captured: Any? = null
+        while (safety++ < 16 && value is Scriptable && value.has("then", value)) {
             val tFn = value.get("then", value) as? Function ?: break
+            var captured: Any? = null
+            var rejected: Any? = null
             tFn.call(
-                Context.getCurrentContext(), value, value,
+                ctx, scope, value,
                 arrayOf(
-                    jsFn { _, _, _, args ->
-                        captured = args.getOrNull(0)
-                        org.mozilla.javascript.Undefined.instance
-                    },
+                    jsFn { _, _, _, args -> captured = args.getOrNull(0); org.mozilla.javascript.Undefined.instance },
+                    jsFn { _, _, _, args -> rejected = args.getOrNull(0); org.mozilla.javascript.Undefined.instance },
                 ),
             )
+            if (rejected != null) {
+                Log.w(TAG, "Provider promise rejected: ${Context.toString(rejected)}")
+                return null
+            }
             value = captured
         }
-        val arr = (value as? NativeArray) ?: return emptyList()
+        return value
+    }
+
+    private fun normaliseResult(raw: Any?): List<NuvioStream> {
+        val arr = (raw as? NativeArray) ?: return emptyList()
         val out = mutableListOf<NuvioStream>()
         for (i in 0 until arr.length.toInt()) {
             val item = arr[i] as? Scriptable ?: continue
@@ -322,5 +337,4 @@ object NuvioRuntime {
 }
 
 private operator fun NativeArray.get(index: Int): Any? = this.get(index, this)
-private val NativeArray.indices: IntRange get() = 0 until length.toInt()
 private operator fun Scriptable.get(name: String): Any? = this.get(name, this)

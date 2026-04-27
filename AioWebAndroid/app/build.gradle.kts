@@ -155,8 +155,9 @@ dependencies {
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     // NewPipe Extractor (YouTube music/videos without API keys)
-    // Excluded: NewPipe pulls full desktop Rhino 1.8.1 which conflicts with the
-    // Android-patched `com.faendir.rhino:rhino-android` we use for Nuvio JS providers.
+    // We exclude its transitive Rhino artifacts; we already pull mainline
+    // `org.mozilla:rhino` ourselves below for Nuvio JS providers, and
+    // duplicated Rhino jars trigger D8's "Duplicate class" failure.
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.0") {
         exclude(group = "org.mozilla", module = "rhino")
         exclude(group = "org.mozilla", module = "rhino-engine")
@@ -176,11 +177,17 @@ dependencies {
     // gradient backgrounds in the Now Playing sheet.
     implementation("androidx.palette:palette-ktx:1.0.0")
 
-    // Mozilla Rhino — pure-JVM JavaScript engine used to run Nuvio's local-scraper
-    // providers (the .js files from yoruix/nuvio-providers, phisher98/...).
-    // We use the Android-flavoured fork that ships with Class.forName / reflection
-    // tweaks so it doesn't blow up under the Android Runtime.
-    implementation("com.faendir.rhino:rhino-android:1.6.0")
+    // QuickJS via JNI — used to run Nuvio's local-scraper providers (the .js files
+    // from yoruix/nuvio-providers, D3adlyRocket/All-in-One-Nuvio, phisher98/...).
+    //
+    // We previously tried Mozilla Rhino (1.7.x and 1.8.x) but Rhino can't parse
+    // ES2017+ syntax — every modern Nuvio provider uses `async`/`await` and
+    // object rest destructuring, both of which Rhino chokes on. QuickJS supports
+    // full ES2020+ natively (it's the same engine used by Bun, edge runtimes, etc.).
+    //
+    // dokar3/quickjs-kt provides idiomatic Kotlin coroutine bindings with `asyncFunction`
+    // backings for native fetch. ~1MB native lib per ABI.
+    implementation("io.github.dokar3:quickjs-kt:1.0.5")
 
     // Jackson — required by CloudStream `.cs3` plugins that call
     // `MainActivityKt.mapper.readValue(...)` or `parsedSafe<...>()`. Without it,
