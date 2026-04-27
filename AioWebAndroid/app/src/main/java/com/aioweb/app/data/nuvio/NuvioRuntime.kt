@@ -6,13 +6,13 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.mozilla.javascript.BaseFunction
 import org.mozilla.javascript.Context
 import org.mozilla.javascript.Function
 import org.mozilla.javascript.NativeArray
 import org.mozilla.javascript.NativeObject
 import org.mozilla.javascript.Scriptable
 import org.mozilla.javascript.ScriptableObject
-import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -42,6 +42,22 @@ object NuvioRuntime {
         .readTimeout(45, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
+
+    /**
+     * Wraps a Kotlin lambda into a Rhino [BaseFunction]. We need an anonymous
+     * class because `BaseFunction` is an abstract Java class (not a SAM type),
+     * so Kotlin won't auto-convert lambdas at the call site.
+     */
+    private fun jsFn(
+        block: (Context, Scriptable, Scriptable, Array<out Any?>) -> Any?,
+    ): BaseFunction = object : BaseFunction() {
+        override fun call(
+            cx: Context,
+            scope: Scriptable,
+            thisObj: Scriptable,
+            args: Array<out Any?>,
+        ): Any? = block(cx, scope, thisObj, args)
+    }
 
     suspend fun runProvider(
         scriptText: String,
@@ -95,7 +111,7 @@ object NuvioRuntime {
     private fun installConsole(ctx: Context, scope: Scriptable) {
         val console = ctx.newObject(scope) as NativeObject
         listOf("log", "info", "warn", "error", "debug").forEach { level ->
-            val fn = org.mozilla.javascript.BaseFunction { _, _, _, args ->
+            val fn = jsFn { _, _, _, args ->
                 val msg = args.joinToString(" ") { Context.toString(it) }
                 Log.println(when (level) {
                     "warn" -> Log.WARN; "error" -> Log.ERROR; "debug" -> Log.DEBUG
@@ -115,7 +131,7 @@ object NuvioRuntime {
      * `await fetch(url)` just works under the regenerator transpile.
      */
     private fun installFetch(ctx: Context, scope: Scriptable) {
-        val fetchFn = org.mozilla.javascript.BaseFunction { c, s, _, args ->
+        val fetchFn = jsFn { c, s, _, args ->
             val url = Context.toString(args.getOrNull(0))
             val opts = args.getOrNull(1) as? Scriptable
             val method = (opts?.get("method", opts) as? String)?.uppercase() ?: "GET"
@@ -144,19 +160,25 @@ object NuvioRuntime {
                 ScriptableObject.putProperty(responseObj, "url", resp.request.url.toString())
                 // headers.get(name)
                 val headersObj = c.newObject(s) as NativeObject
-                val getFn = org.mozilla.javascript.BaseFunction { _, _, _, hArgs ->
+                val getFn = jsFn { _, _, _, hArgs ->
                     val n = Context.toString(hArgs.getOrNull(0))
                     resp.header(n) ?: org.mozilla.javascript.Undefined.instance
                 }
                 ScriptableObject.putProperty(headersObj, "get", getFn)
                 ScriptableObject.putProperty(responseObj, "headers", headersObj)
-                ScriptableObject.putProperty(responseObj, "text",
-                    org.mozilla.javascript.BaseFunction { _, _, _, _ -> resolved(c, s, text) })
-                ScriptableObject.putProperty(responseObj, "json",
-                    org.mozilla.javascript.BaseFunction { _, _, _, _ ->
+                ScriptableObject.putProperty(
+                    responseObj,
+                    "text",
+                    jsFn { _, _, _, _ -> resolved(c, s, text) },
+                )
+                ScriptableObject.putProperty(
+                    responseObj,
+                    "json",
+                    jsFn { _, _, _, _ ->
                         val parsed = ctx.evaluateString(s, "($text)", "<json>", 1, null)
                         resolved(c, s, parsed)
-                    })
+                    },
+                )
                 resp.close()
                 resolved(c, s, responseObj)
             } catch (e: Throwable) {
@@ -175,13 +197,13 @@ object NuvioRuntime {
      */
     private fun installPromiseShim(ctx: Context, scope: Scriptable) {
         val promiseObj = ctx.newObject(scope) as NativeObject
-        val resolveFn = org.mozilla.javascript.BaseFunction { c, s, _, args ->
+        val resolveFn = jsFn { c, s, _, args ->
             resolved(c, s, args.getOrNull(0))
         }
-        val rejectFn = org.mozilla.javascript.BaseFunction { c, s, _, args ->
+        val rejectFn = jsFn { c, s, _, args ->
             rejected(c, s, Context.toString(args.getOrNull(0)))
         }
-        val allFn = org.mozilla.javascript.BaseFunction { c, s, _, args ->
+        val allFn = jsFn { c, s, _, args ->
             val arr = args.getOrNull(0) as? NativeArray
             val out = NativeArray(arr?.length ?: 0)
             arr?.indices?.forEach { i ->
@@ -189,11 +211,15 @@ object NuvioRuntime {
                 val v = if (item is Scriptable && item.has("then", item)) {
                     var captured: Any? = null
                     val tFn = (item.get("then", item) as? Function) ?: return@forEach
-                    tFn.call(c, s, item, arrayOf(
-                        org.mozilla.javascript.BaseFunction { _, _, _, a ->
-                            captured = a.getOrNull(0); org.mozilla.javascript.Undefined.instance
-                        },
-                    ))
+                    tFn.call(
+                        c, s, item,
+                        arrayOf(
+                            jsFn { _, _, _, a ->
+                                captured = a.getOrNull(0)
+                                org.mozilla.javascript.Undefined.instance
+                            },
+                        ),
+                    )
                     captured
                 } else item
                 ScriptableObject.putProperty(out, i, v)
@@ -208,26 +234,29 @@ object NuvioRuntime {
 
     private fun installTimers(ctx: Context, scope: Scriptable) {
         // No-op timers — providers that gate on setTimeout will just call the cb immediately.
-        val st = org.mozilla.javascript.BaseFunction { c, s, _, args ->
+        val st = jsFn { c, s, _, args ->
             val cb = args.getOrNull(0) as? Function
             cb?.call(c, s, s, emptyArray())
             0
         }
         ScriptableObject.putProperty(scope, "setTimeout", st)
-        ScriptableObject.putProperty(scope, "clearTimeout",
-            org.mozilla.javascript.BaseFunction { _, _, _, _ -> org.mozilla.javascript.Undefined.instance })
+        ScriptableObject.putProperty(
+            scope,
+            "clearTimeout",
+            jsFn { _, _, _, _ -> org.mozilla.javascript.Undefined.instance },
+        )
     }
 
     private fun resolved(ctx: Context, scope: Scriptable, value: Any?): Scriptable {
         val obj = ctx.newObject(scope) as NativeObject
-        val thenFn = org.mozilla.javascript.BaseFunction { c, s, _, args ->
+        val thenFn = jsFn { c, s, _, args ->
             val cb = args.getOrNull(0) as? Function
             val mapped = cb?.call(c, s, s, arrayOf(value)) ?: value
             // If the mapped value is itself a thenable, return as-is so the chain continues.
             if (mapped is Scriptable && mapped.has("then", mapped)) mapped
             else resolved(c, s, mapped)
         }
-        val catchFn = org.mozilla.javascript.BaseFunction { c, s, _, _ ->
+        val catchFn = jsFn { c, s, _, _ ->
             resolved(c, s, value)
         }
         ScriptableObject.putProperty(obj, "then", thenFn)
@@ -237,14 +266,14 @@ object NuvioRuntime {
 
     private fun rejected(ctx: Context, scope: Scriptable, reason: String): Scriptable {
         val obj = ctx.newObject(scope) as NativeObject
-        val thenFn = org.mozilla.javascript.BaseFunction { c, s, _, args ->
+        val thenFn = jsFn { c, s, _, args ->
             val errCb = args.getOrNull(1) as? Function
             if (errCb != null) {
                 val mapped = errCb.call(c, s, s, arrayOf(reason))
                 resolved(c, s, mapped)
             } else rejected(c, s, reason)
         }
-        val catchFn = org.mozilla.javascript.BaseFunction { c, s, _, args ->
+        val catchFn = jsFn { c, s, _, args ->
             val cb = args.getOrNull(0) as? Function
             val mapped = cb?.call(c, s, s, arrayOf(reason)) ?: org.mozilla.javascript.Undefined.instance
             resolved(c, s, mapped)
@@ -262,11 +291,15 @@ object NuvioRuntime {
         while (value is Scriptable && value.has("then", value) && safety++ < 8) {
             var captured: Any? = null
             val tFn = value.get("then", value) as? Function ?: break
-            tFn.call(Context.getCurrentContext(), value, value, arrayOf(
-                org.mozilla.javascript.BaseFunction { _, _, _, args ->
-                    captured = args.getOrNull(0); org.mozilla.javascript.Undefined.instance
-                },
-            ))
+            tFn.call(
+                Context.getCurrentContext(), value, value,
+                arrayOf(
+                    jsFn { _, _, _, args ->
+                        captured = args.getOrNull(0)
+                        org.mozilla.javascript.Undefined.instance
+                    },
+                ),
+            )
             value = captured
         }
         val arr = (value as? NativeArray) ?: return emptyList()

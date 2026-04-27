@@ -5,12 +5,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Extension
@@ -374,7 +377,7 @@ fun PluginsScreen(onBack: () -> Unit) {
                                     when {
                                         installing -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                                         already -> Icon(
-                                            androidx.compose.material.icons.Icons.Default.CheckCircle,
+                                            Icons.Default.CheckCircle,
                                             "Installed",
                                             tint = MaterialTheme.colorScheme.primary,
                                         )

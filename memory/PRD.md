@@ -89,11 +89,17 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
 - Added Material You (Monet) toggle
 - Added Offline music downloads (TrackEntity.localPath + MusicDownloader + MiniPlayer download icon)
 - Library tab fully reworked — Downloaded / Liked / Recently played sections from Room
+- **(NEW)** Fixed Kotlin compile error in `NuvioRuntime.kt` — Rhino `BaseFunction` is an abstract Java class so SAM-conversion lambdas don't infer; added a `jsFn { c, s, t, args -> ... }` helper that returns an anonymous `BaseFunction()` subclass.
+- **(NEW)** Fixed missing imports in `PluginsScreen.kt` (`verticalScroll`, `rememberScrollState`, `Icons.Default.CheckCircle`).
+- **(NEW)** Player now **forces landscape orientation** (`ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE`) while on screen, restored on dispose.
+- **(NEW)** Fixed crash when tapping the in-player **Sources** button — defensive `distinctBy { it.id }` to dedupe colliding Stremio/Nuvio source ids that were violating Compose `LazyColumn(items, key={...})` uniqueness.
+- **(NEW)** Cleaned up the awkward `{ -> ... }` empty-arg lambda in `PlayerToolbarPill(onSourcesClick = ...)` to a standard `() -> Unit` closure.
 
 ## Backlog / next iterations
-- **P1** Picture-in-Picture (PiP) + landscape orientation lock for the player
+- **P1** Picture-in-Picture (PiP) for the player
 - **P1** Brightness/volume vertical drag gestures (Nuvio-style)
 - **P1** Subtitle track picker + external SRT/VTT loader in NativePlayerScreen
+- **P1** Refactor monolithic `MovieDetailScreen.kt` / `PluginsScreen.kt` into per-ecosystem modules (CloudStream / Stremio / Nuvio)
 - **P2** Downloads tab for movies/adult via WorkManager
 - **P2** Real-world torrent streaming verification with magnet links
 - **P2** Per-ABI APK splits / AAB

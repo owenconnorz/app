@@ -2,6 +2,7 @@ package com.aioweb.app.player
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -168,10 +169,18 @@ fun NativePlayerScreen(
     }
 
     // --- Window flags + cleanup ----------------------------------------------------------------
-    val window = (context as? Activity)?.window
+    val activity = context as? Activity
+    val window = activity?.window
     DisposableEffect(Unit) {
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+        // Force landscape while the player is on screen — restore on dispose.
+        val previousOrientation = activity?.requestedOrientation
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            activity?.requestedOrientation =
+                previousOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
     }
     DisposableEffect(Unit) {
         onDispose {
@@ -380,9 +389,12 @@ fun NativePlayerScreen(
                             horizontalArrangement = Arrangement.Center,
                         ) {
                             PlayerToolbarPill(
-                                onSourcesClick = if (sources.isNotEmpty())
-                                    { -> showSourcesSheet = true; bumpInteraction() }
-                                else null,
+                                onSourcesClick = if (sources.isNotEmpty()) {
+                                    {
+                                        showSourcesSheet = true
+                                        bumpInteraction()
+                                    }
+                                } else null,
                             )
                         }
                     }
@@ -577,12 +589,14 @@ private fun SourcesPickerSheet(
     onPick: (PlayerSource) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val addonFilters = remember(sources) {
-        listOf("All") + sources.map { it.addonName }.distinct()
+    val safeSources = remember(sources) { sources.distinctBy { it.id } }
+    val addonFilters = remember(safeSources) {
+        listOf("All") + safeSources.map { it.addonName }.distinct()
     }
-    var activeFilter by remember(sources) { mutableStateOf("All") }
-    val filtered = remember(activeFilter, sources) {
-        if (activeFilter == "All") sources else sources.filter { it.addonName == activeFilter }
+    var activeFilter by remember(safeSources) { mutableStateOf("All") }
+    val filtered = remember(activeFilter, safeSources) {
+        if (activeFilter == "All") safeSources
+        else safeSources.filter { it.addonName == activeFilter }
     }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
