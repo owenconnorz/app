@@ -8,6 +8,8 @@ import com.aioweb.app.data.ServiceLocator
 import com.aioweb.app.data.api.TmdbMovie
 import com.aioweb.app.data.collections.HomeCollection
 import com.aioweb.app.data.collections.HomeCollections
+import com.aioweb.app.data.library.LibraryDb
+import com.aioweb.app.data.library.WatchProgressEntity
 import com.aioweb.app.data.plugins.InstalledPlugin
 import com.aioweb.app.data.plugins.PluginRepository
 import com.aioweb.app.data.plugins.PluginRuntime
@@ -48,6 +50,7 @@ data class MoviesState(
     val nowPlaying: List<TmdbMovie> = emptyList(),
     val collections: List<CollectionRow> = emptyList(),
     val heroBanner: List<TmdbMovie> = emptyList(),
+    val continueWatching: List<WatchProgressEntity> = emptyList(),
     val searchResults: List<TmdbMovie> = emptyList(),
     val installedPlugins: List<InstalledPlugin> = emptyList(),
     val installedStremioAddons: List<InstalledStremioAddon> = emptyList(),
@@ -94,6 +97,12 @@ class MoviesViewModel(
         // Auto-reload home rows whenever the user toggles a collection in Settings.
         viewModelScope.launch {
             sl.settings.homeCollectionsCsv.collectLatest { loadDiscover() }
+        }
+        // Continue-watching row is fed by the player whenever the user pauses/exits.
+        viewModelScope.launch {
+            LibraryDb.get(appContext).watchProgress().continueWatching().collect { rows ->
+                _state.update { it.copy(continueWatching = rows) }
+            }
         }
     }
 
@@ -172,7 +181,9 @@ class MoviesViewModel(
                             pluginSections = emptyList(),
                             pluginError = err
                                 ?: "Plugin loaded but returned no home content. Try search instead.",
-                            notice = "Plugin loaded — but its home feed is empty. Use search.",
+                            // Suppress the duplicate "Use search." notice when the error card
+                            // is already shown below — we used to render both stacked.
+                            notice = null,
                         )
                     }
                 } else {

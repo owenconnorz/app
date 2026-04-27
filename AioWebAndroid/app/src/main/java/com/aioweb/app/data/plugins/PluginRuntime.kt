@@ -176,14 +176,47 @@ object PluginRuntime {
 
     suspend fun home(context: Context, filePath: String): List<Pair<String, List<SearchResponse>>> {
         val apis = load(context, filePath)
+        if (apis.isEmpty()) {
+            // Either load() failed (lastErrors already populated) OR the plugin
+            // didn't register any MainAPI. Surface a useful message either way.
+            if (lastErrors[filePath] == null) {
+                lastErrors[filePath] = "Plugin loaded but registered 0 MainAPIs."
+            }
+            return emptyList()
+        }
         val out = mutableListOf<Pair<String, List<SearchResponse>>>()
+        val perApiErrors = mutableListOf<String>()
         apis.forEach { api ->
-            api.mainPage.forEach { req: MainPageRequest ->
+            // CloudStream plugins normally declare `override val mainPage = mainPageOf(...)`.
+            // Some legacy/third-party providers leave it empty but still implement
+            // `getMainPage(page, request)` — synthesise a single default request so
+            // those still surface their home feed instead of looking "broken".
+            val requests = if (api.mainPage.isNotEmpty()) api.mainPage
+            else listOf(MainPageRequest(name = api.name, data = "", horizontalImages = false))
+            var apiSectionsAdded = 0
+            requests.forEach { req: MainPageRequest ->
                 try {
                     val page = api.getMainPage(1, req)
-                    page?.items?.forEach { hpl -> out += hpl.name to hpl.list }
-                } catch (_: Throwable) { /* ignore individual section failures */ }
+                    page?.items?.forEach { hpl ->
+                        if (hpl.list.isNotEmpty()) {
+                            out += hpl.name to hpl.list
+                            apiSectionsAdded++
+                        }
+                    }
+                } catch (e: Throwable) {
+                    perApiErrors += "${api.name} · ${req.name}: ${e::class.simpleName}: ${e.message}"
+                }
             }
+            if (apiSectionsAdded == 0 && perApiErrors.isEmpty()) {
+                perApiErrors += "${api.name}: getMainPage returned no items."
+            }
+        }
+        if (out.isEmpty()) {
+            lastErrors[filePath] = perApiErrors.joinToString("\n").ifBlank {
+                "Plugin loaded but no sections were returned."
+            }
+        } else {
+            lastErrors.remove(filePath)
         }
         return out
     }

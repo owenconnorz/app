@@ -30,6 +30,7 @@ import com.aioweb.app.data.nuvio.NuvioStream
 import com.aioweb.app.data.stremio.InstalledStremioAddon
 import com.aioweb.app.data.stremio.StremioStream
 import com.aioweb.app.player.PlayerSource
+import com.aioweb.app.player.WatchProgressKey
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
@@ -47,8 +48,8 @@ import kotlinx.coroutines.launch
 fun MovieDetailScreen(
     movieId: Long,
     onBack: () -> Unit,
-    /** Fired with (initial url, title, full source list) when streams resolve. */
-    onPlay: (initialUrl: String, title: String, sources: List<PlayerSource>) -> Unit,
+    /** Fired with (initial url, title, full source list, progressKey) when streams resolve. */
+    onPlay: (initialUrl: String, title: String, sources: List<PlayerSource>, progressKey: WatchProgressKey) -> Unit,
 ) {
     val context = LocalContext.current
     val sl = remember { ServiceLocator.get(context) }
@@ -115,7 +116,15 @@ fun MovieDetailScreen(
                 }
                 val sorted = all.sortedByDescending { it.qualityScore() }
                 val best = sorted.first()
-                onPlay(best.url, "${movie?.displayTitle ?: "Playback"}", sorted)
+                val m = movie
+                val displayTitle = m?.displayTitle ?: "Playback"
+                val progressKey = WatchProgressKey(
+                    tmdbId = movieId,
+                    title = displayTitle,
+                    posterUrl = m?.posterUrl ?: m?.backdropUrl,
+                    mediaType = "movie",
+                )
+                onPlay(best.url, displayTitle, sorted, progressKey)
             } finally {
                 resolving = false
             }

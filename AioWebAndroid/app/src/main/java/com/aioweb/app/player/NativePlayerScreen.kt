@@ -96,6 +96,9 @@ fun NativePlayerScreen(
     /** Called with a different source id when the user picks a new stream. The host
      *  is expected to swap [streamUrl]/[subtitle] and re-enter the composition. */
     onSwitchSource: ((PlayerSource) -> Unit)? = null,
+    /** When non-null, the player saves resume-playback state every ~10s and on dispose,
+     *  feeding the "Continue Watching" row on the home screen. */
+    progressKey: WatchProgressKey? = null,
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -165,6 +168,17 @@ fun NativePlayerScreen(
                 prepare()
                 playWhenReady = true
             }
+        // Resume from the last known position for this title, if any.
+        val savedPosition = progressKey?.let { pk ->
+            runCatching {
+                com.aioweb.app.data.library.LibraryDb.get(context.applicationContext)
+                    .watchProgress()
+                    .byId(pk.tmdbId)
+                    ?.positionMs
+                    ?.takeIf { it > 5_000L }
+            }.getOrNull()
+        }
+        if (savedPosition != null) ex.seekTo(savedPosition)
         player.value = ex
     }
 
@@ -223,6 +237,69 @@ fun NativePlayerScreen(
         if (controlsVisible) {
             delay(3000)
             if (System.currentTimeMillis() - lastInteractionTs >= 2900) controlsVisible = false
+        }
+    }
+
+    // ── Continue-watching: save resume position every 10s + on dispose ────────────
+    if (progressKey != null) {
+        val appContext = context.applicationContext
+        LaunchedEffect(ex, progressKey.tmdbId) {
+            ex ?: return@LaunchedEffect
+            while (true) {
+                delay(10_000)
+                val pos = ex.currentPosition.coerceAtLeast(0L)
+                val dur = ex.duration.coerceAtLeast(0L)
+                if (dur > 0L && pos > 0L) {
+                    runCatching {
+                        com.aioweb.app.data.library.LibraryDb.get(appContext)
+                            .watchProgress()
+                            .upsert(
+                                com.aioweb.app.data.library.WatchProgressEntity(
+                                    tmdbId = progressKey.tmdbId,
+                                    title = progressKey.title,
+                                    posterUrl = progressKey.posterUrl,
+                                    mediaType = progressKey.mediaType,
+                                    positionMs = pos,
+                                    durationMs = dur,
+                                    updatedAt = System.currentTimeMillis(),
+                                ),
+                            )
+                    }
+                }
+            }
+        }
+        DisposableEffect(progressKey.tmdbId) {
+            onDispose {
+                val cur = ex
+                if (cur != null) {
+                    val pos = cur.currentPosition.coerceAtLeast(0L)
+                    val dur = cur.duration.coerceAtLeast(0L)
+                    if (dur > 0L && pos > 0L) {
+                        // Fire-and-forget on a background thread; the player is being torn down.
+                        Thread {
+                            runCatching {
+                                com.aioweb.app.data.library.LibraryDb.get(appContext)
+                                    .watchProgress()
+                                    .let { dao ->
+                                        kotlinx.coroutines.runBlocking {
+                                            dao.upsert(
+                                                com.aioweb.app.data.library.WatchProgressEntity(
+                                                    tmdbId = progressKey.tmdbId,
+                                                    title = progressKey.title,
+                                                    posterUrl = progressKey.posterUrl,
+                                                    mediaType = progressKey.mediaType,
+                                                    positionMs = pos,
+                                                    durationMs = dur,
+                                                    updatedAt = System.currentTimeMillis(),
+                                                ),
+                                            )
+                                        }
+                                    }
+                            }
+                        }.start()
+                    }
+                }
+            }
         }
     }
 

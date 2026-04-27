@@ -130,8 +130,8 @@ fun AioWebApp() {
                     MovieDetailScreen(
                         movieId = it.arguments!!.getLong("id"),
                         onBack = { nav.popBackStack() },
-                        onPlay = { initialUrl, title, sources ->
-                            com.aioweb.app.player.MoviePlayerSession.set(sources)
+                        onPlay = { initialUrl, title, sources, progressKey ->
+                            com.aioweb.app.player.MoviePlayerSession.set(sources, progressKey)
                             val u = URLEncoder.encode(initialUrl, "UTF-8")
                             val t = URLEncoder.encode(title, "UTF-8")
                             nav.navigate("player/movie/$u/$t")
@@ -224,6 +224,7 @@ fun AioWebApp() {
                             currentUrl = src.url
                             currentId = src.id
                         },
+                        progressKey = com.aioweb.app.player.MoviePlayerSession.progressKey,
                         onBack = { nav.popBackStack() },
                     )
                 }

@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.aioweb.app.data.api.TmdbMovie
+import com.aioweb.app.data.library.WatchProgressEntity
 import com.aioweb.app.data.plugins.InstalledPlugin
 import com.aioweb.app.ui.viewmodel.MoviesViewModel
 import com.aioweb.app.ui.viewmodel.SOURCE_BUILTIN
@@ -160,6 +161,27 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                             items = state.heroBanner,
                             onClick = { onMovieClick(it) },
                         )
+                    }
+                }
+                if (state.continueWatching.isNotEmpty()) {
+                    item(key = "continue_watching_t") {
+                        SectionTitle("Continue Watching")
+                    }
+                    item(key = "continue_watching") {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            items(
+                                state.continueWatching,
+                                key = { "cw_${it.tmdbId}" },
+                            ) { entry ->
+                                ContinueWatchingCard(
+                                    entry = entry,
+                                    onClick = { onMovieClick(entry.tmdbId) },
+                                )
+                            }
+                        }
                     }
                 }
                 state.collections.forEachIndexed { idx, row ->
@@ -518,6 +540,75 @@ private fun HeroPoster(m: TmdbMovie, onClick: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ContinueWatchingCard(
+    entry: WatchProgressEntity,
+    onClick: () -> Unit,
+) {
+    val pct = if (entry.durationMs > 0L)
+        (entry.positionMs.toFloat() / entry.durationMs.toFloat()).coerceIn(0f, 1f)
+    else 0f
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .width(320.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick)
+            .padding(8.dp),
+    ) {
+        AsyncImage(
+            model = entry.posterUrl,
+            contentDescription = entry.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(width = 84.dp, height = 116.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                entry.title,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                if (entry.mediaType == "tv") "Series" else "Movie",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(14.dp))
+            // Progress bar
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(pct.coerceAtLeast(0.02f))
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.primary),
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "${(pct * 100).toInt()}% watched",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }
