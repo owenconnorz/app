@@ -183,8 +183,47 @@ fun MusicScreen(onArtistClick: (String) -> Unit = {}) {
                     }
                 }
 
-                // Home feed (Trending music) — appears as soon as NewPipe returns it
-                if (state.homeFeed.isNotEmpty()) {
+                // ── Metrolist-style YouTube Music home feed ───────────────────
+                // This replaces the single "Trending today" rail with the full
+                // personalised set of shelves (Quick picks, Keep listening, Your daily
+                // discover, From the community, New releases, mood chips, etc.).
+                state.ytHome.sections.forEachIndexed { idx, section ->
+                    when (section) {
+                        is com.aioweb.app.data.ytmusic.HomeSection.MoodChips -> {
+                            item(key = "yt_chips_$idx") { YtMoodChipRow(section.chips) }
+                        }
+                        is com.aioweb.app.data.ytmusic.HomeSection.PlaylistRail -> {
+                            item(key = "yt_prail_title_$idx") { SectionTitle(section.title) }
+                            item(key = "yt_prail_$idx") {
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    items(section.items, key = { "${it.id}_$idx" }) { pl ->
+                                        YtHomePlaylistCard(pl)
+                                    }
+                                }
+                            }
+                        }
+                        is com.aioweb.app.data.ytmusic.HomeSection.SongRail -> {
+                            item(key = "yt_srail_title_$idx") { SectionTitle(section.title) }
+                            item(key = "yt_srail_$idx") {
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    items(section.items, key = { "${it.videoId}_$idx" }) { s ->
+                                        YtHomeSongCard(s)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Legacy fallback: NewPipe "Trending" feed — only shown when the YT
+                // home feed didn't surface anything (not signed in / fetch failed).
+                if (state.ytHome.sections.isEmpty() && state.homeFeed.isNotEmpty()) {
                     item { SectionTitle("Trending today") }
                     item {
                         LazyRow(
@@ -218,7 +257,7 @@ fun MusicScreen(onArtistClick: (String) -> Unit = {}) {
                             }
                         )
                     }
-                } else if (state.homeLoading) {
+                } else if ((state.ytHomeLoading && state.ytHome.sections.isEmpty()) || state.homeLoading) {
                     item {
                         Box(
                             Modifier.fillMaxWidth().padding(40.dp),
@@ -942,3 +981,91 @@ private fun MiniPlayer(
         }
     }
 }
+
+// ───────────── Metrolist-style YouTube Music home sections ─────────────
+
+@Composable
+private fun YtMoodChipRow(chips: List<com.aioweb.app.data.ytmusic.MoodChip>) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(chips, key = { "chip_${it.label}" }) { chip ->
+            AssistChip(
+                onClick = { /* TODO: apply mood filter via YtMusicHomeRepository */ },
+                label = { Text(chip.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun YtHomePlaylistCard(pl: com.aioweb.app.data.ytmusic.YtmPlaylist) {
+    Column(
+        Modifier
+            .width(150.dp)
+            .clickable { /* TODO: open YtPlaylistScreen */ },
+    ) {
+        AsyncImage(
+            model = pl.thumbnail,
+            contentDescription = pl.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(150.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            pl.title,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        pl.subtitle?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun YtHomeSongCard(s: com.aioweb.app.data.ytmusic.YtmSong) {
+    Column(
+        Modifier
+            .width(150.dp)
+            .clickable { /* TODO: resolve videoId -> stream -> play */ },
+    ) {
+        AsyncImage(
+            model = s.thumbnail,
+            contentDescription = s.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(150.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            s.title,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            s.artist,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+

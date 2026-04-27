@@ -15,10 +15,13 @@ import com.aioweb.app.data.newpipe.NewPipeRepository
 import com.aioweb.app.data.newpipe.YtAlbum
 import com.aioweb.app.data.newpipe.YtArtist
 import com.aioweb.app.data.newpipe.YtTrack
+import com.aioweb.app.data.ytmusic.YtMusicHomeFeed
+import com.aioweb.app.data.ytmusic.YtMusicHomeRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -59,9 +62,14 @@ data class MusicState(
     val sections: MusicSearchSections = MusicSearchSections(),
     val albumResults: List<YtAlbum> = emptyList(),
     val artistResults: List<YtArtist> = emptyList(),
+
+    // ── Metrolist-style home feed (YouTube Music personalised sections) ──────
+    val ytHome: YtMusicHomeFeed = YtMusicHomeFeed(),
+    val ytHomeLoading: Boolean = false,
 )
 
 class MusicViewModel(context: Context) : ViewModel() {
+    private val appContext = context.applicationContext
     private val _state = MutableStateFlow(MusicState())
     val state: StateFlow<MusicState> = _state.asStateFlow()
 
@@ -70,6 +78,7 @@ class MusicViewModel(context: Context) : ViewModel() {
 
     init {
         loadHomeFeed()
+        loadYtHome()
         viewModelScope.launch {
             dao.recent().collect { list -> _state.update { it.copy(recent = list) } }
         }
@@ -78,6 +87,21 @@ class MusicViewModel(context: Context) : ViewModel() {
         }
         viewModelScope.launch {
             dao.mostPlayed().collect { list -> _state.update { it.copy(mostPlayed = list) } }
+        }
+        // Reload the YT Music home feed whenever the login cookie changes (sign in / out).
+        viewModelScope.launch {
+            com.aioweb.app.data.ServiceLocator.get(appContext).settings.ytMusicCookie
+                .collect { _ -> loadYtHome() }
+        }
+    }
+
+    fun loadYtHome() {
+        viewModelScope.launch {
+            _state.update { it.copy(ytHomeLoading = true) }
+            val cookie = com.aioweb.app.data.ServiceLocator.get(appContext)
+                .settings.ytMusicCookie.first()
+            val feed = YtMusicHomeRepository.load(cookie)
+            _state.update { it.copy(ytHome = feed, ytHomeLoading = false) }
         }
     }
 
