@@ -3,18 +3,20 @@ package com.aioweb.app.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,7 +33,12 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.aioweb.app.data.library.LibraryDb
 import com.aioweb.app.data.library.TrackEntity
+import com.aioweb.app.data.ytmusic.YtMusicLibrary
+import com.aioweb.app.data.ytmusic.YtmLibraryArtist
+import com.aioweb.app.data.ytmusic.YtmPlaylist
+import com.aioweb.app.data.ytmusic.YtmSong
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 
 private enum class LibTab(val label: String) {
     Playlists("Playlists"),
@@ -41,9 +49,32 @@ private enum class LibTab(val label: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen() {
+fun LibraryScreen(
+    onOpenPlaylist: (id: String, title: String) -> Unit = { _, _ -> },
+    onOpenArtist: (channelUrl: String) -> Unit = {},
+) {
     val context = LocalContext.current
     val dao = remember { LibraryDb.get(context).tracks() }
+    val sl = remember(context) { com.aioweb.app.data.ServiceLocator.get(context) }
+    val ytCookie by sl.settings.ytMusicCookie.collectAsState(initial = "")
+    val scope = rememberCoroutineScope()
+
+    // YT Music library — synced lazily the first time the tab is opened while signed in,
+    // and again when the user hits the refresh button.
+    var ytLibrary by remember { mutableStateOf(com.aioweb.app.data.ytmusic.YtMusicLibrary()) }
+    var ytLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(ytCookie) {
+        if (ytCookie.isBlank()) {
+            ytLibrary = com.aioweb.app.data.ytmusic.YtMusicLibrary(
+                failureReason = "Not signed in.",
+            )
+            return@LaunchedEffect
+        }
+        ytLoading = true
+        ytLibrary = com.aioweb.app.data.ytmusic.YtMusicLibraryRepository.sync(ytCookie)
+        ytLoading = false
+    }
 
     val combined by remember(dao) {
         combine(dao.liked(), dao.recent(), dao.downloaded(), dao.mostPlayed()) { l, r, d, mp ->
@@ -95,63 +126,115 @@ fun LibraryScreen() {
                 items(list, key = { it.url }) { e -> LibTrackRow(e) }
             }
         } else {
-            // 2x2 grid of large playlist tiles
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            LazyColumn(Modifier.fillMaxSize()) {
+                // ─── YT Music sync status ────────────────────────────────────
                 item {
-                    LibTile(
-                        title = "Liked", icon = Icons.Default.Favorite,
-                        count = liked.size,
-                        thumbs = liked.mapNotNull { it.thumbnail }.take(4),
-                        onClick = { openTile = "liked" },
+                    YtMusicSyncHeader(
+                        signedIn = ytCookie.isNotBlank(),
+                        loading = ytLoading,
+                        library = ytLibrary,
+                        onRefresh = {
+                            scope.launch {
+                                ytLoading = true
+                                ytLibrary = com.aioweb.app.data.ytmusic.YtMusicLibraryRepository.sync(ytCookie)
+                                ytLoading = false
+                            }
+                        },
                     )
                 }
-                item {
-                    LibTile(
-                        title = "Downloaded", icon = Icons.Default.DownloadDone,
-                        count = downloaded.size,
-                        thumbs = downloaded.mapNotNull { it.thumbnail }.take(4),
-                        onClick = { openTile = "downloaded" },
-                    )
-                }
-                item {
-                    LibTile(
-                        title = "My top 50", icon = Icons.Default.TrendingUp,
-                        count = mostPlayed.size.coerceAtMost(50),
-                        thumbs = mostPlayed.mapNotNull { it.thumbnail }.take(4),
-                        onClick = { openTile = "top50" },
-                    )
-                }
-                item {
-                    LibTile(
-                        title = "Cached", icon = Icons.Default.History,
-                        count = recent.size,
-                        thumbs = recent.mapNotNull { it.thumbnail }.take(4),
-                        onClick = { openTile = "cached" },
-                    )
-                }
-                item {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                            .clickable { /* TODO: create new playlist */ },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Default.Add, "New playlist",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(40.dp),
+                if (ytLibrary.likedSongs.isNotEmpty()) {
+                    item {
+                        YtSongsSection(
+                            title = "Liked songs · YouTube Music",
+                            songs = ytLibrary.likedSongs,
+                            onSongClick = { /* TODO: wire to MusicPlaybackService */ },
                         )
                     }
                 }
+                if (ytLibrary.playlists.isNotEmpty()) {
+                    item {
+                        YtPlaylistSection(
+                            title = "Your playlists",
+                            playlists = ytLibrary.playlists,
+                            onClick = { p -> onOpenPlaylist(p.id, p.title) },
+                        )
+                    }
+                }
+                if (ytLibrary.albums.isNotEmpty()) {
+                    item {
+                        YtPlaylistSection(
+                            title = "Your albums",
+                            playlists = ytLibrary.albums,
+                            onClick = { p -> onOpenPlaylist(p.id, p.title) },
+                        )
+                    }
+                }
+                if (ytLibrary.artists.isNotEmpty()) {
+                    item {
+                        YtArtistsSection(
+                            artists = ytLibrary.artists,
+                            onClick = { a ->
+                                onOpenArtist("https://music.youtube.com/channel/${a.channelId}")
+                            },
+                        )
+                    }
+                }
+
+                // ─── Existing local library tiles (2×2 grid) ────────────────
+                item {
+                    Text(
+                        "On this device",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    )
+                }
+                // Render the four tiles as two manual rows so the whole list stays in one scroll.
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Box(Modifier.weight(1f)) {
+                            LibTile(
+                                "Liked", Icons.Default.Favorite, liked.size,
+                                liked.mapNotNull { it.thumbnail }.take(4),
+                                onClick = { openTile = "liked" },
+                            )
+                        }
+                        Box(Modifier.weight(1f)) {
+                            LibTile(
+                                "Downloaded", Icons.Default.DownloadDone, downloaded.size,
+                                downloaded.mapNotNull { it.thumbnail }.take(4),
+                                onClick = { openTile = "downloaded" },
+                            )
+                        }
+                    }
+                }
+                item { Spacer(Modifier.height(12.dp)) }
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Box(Modifier.weight(1f)) {
+                            LibTile(
+                                "My top 50", Icons.Default.TrendingUp,
+                                mostPlayed.size.coerceAtMost(50),
+                                mostPlayed.mapNotNull { it.thumbnail }.take(4),
+                                onClick = { openTile = "top50" },
+                            )
+                        }
+                        Box(Modifier.weight(1f)) {
+                            LibTile(
+                                "Cached", Icons.Default.History, recent.size,
+                                recent.mapNotNull { it.thumbnail }.take(4),
+                                onClick = { openTile = "cached" },
+                            )
+                        }
+                    }
+                }
+                item { Spacer(Modifier.height(40.dp)) }
             }
         }
     }
@@ -316,3 +399,217 @@ private fun LibTrackRow(entity: TrackEntity) {
         }
     }
 }
+
+// ─────────────────────── YouTube Music sync widgets ───────────────────────
+
+@Composable
+private fun YtMusicSyncHeader(
+    signedIn: Boolean,
+    loading: Boolean,
+    library: YtMusicLibrary,
+    onRefresh: () -> Unit,
+) {
+    if (!signedIn) return
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Default.CloudDone, null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "YouTube Music · Synced",
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            val subtitle = when {
+                loading -> "Refreshing…"
+                library.failureReason != null -> library.failureReason.orEmpty()
+                library.likedSongs.isEmpty() && library.playlists.isEmpty() &&
+                    library.albums.isEmpty() && library.artists.isEmpty() ->
+                    "Nothing in your YouTube Music library yet."
+                else -> "${library.playlists.size} playlists · " +
+                    "${library.albums.size} albums · " +
+                    "${library.artists.size} artists · " +
+                    "${library.likedSongs.size} liked"
+            }
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = onRefresh, enabled = !loading) {
+            if (loading) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Default.Refresh, "Refresh")
+            }
+        }
+    }
+}
+
+@Composable
+private fun YtPlaylistSection(
+    title: String,
+    playlists: List<YtmPlaylist>,
+    onClick: (YtmPlaylist) -> Unit,
+) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+    )
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(playlists, key = { "yp_${it.id}" }) { pl ->
+            Column(
+                Modifier
+                    .width(150.dp)
+                    .clickable { onClick(pl) },
+            ) {
+                AsyncImage(
+                    model = pl.thumbnail,
+                    contentDescription = pl.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(150.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    pl.title,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                pl.subtitle?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun YtArtistsSection(
+    artists: List<YtmLibraryArtist>,
+    onClick: (YtmLibraryArtist) -> Unit,
+) {
+    Text(
+        "Subscribed artists",
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+    )
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(artists, key = { "ya_${it.channelId}" }) { a ->
+            Column(
+                Modifier
+                    .width(120.dp)
+                    .clickable { onClick(a) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                AsyncImage(
+                    model = a.thumbnail,
+                    contentDescription = a.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(100.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    a.name,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 2,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun YtSongsSection(
+    title: String,
+    songs: List<YtmSong>,
+    onSongClick: (YtmSong) -> Unit,
+) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+    )
+    // Show a preview — first 5 songs — with a "View all" affordance at the bottom.
+    Column {
+        songs.take(5).forEach { s ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onSongClick(s) }
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AsyncImage(
+                    model = s.thumbnail,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        s.title,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        s.artist,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        if (songs.size > 5) {
+            TextButton(
+                onClick = { /* TODO: open dedicated liked songs screen */ },
+                modifier = Modifier.padding(horizontal = 12.dp),
+            ) {
+                Text("View all ${songs.size} liked songs")
+            }
+        }
+    }
+}
+

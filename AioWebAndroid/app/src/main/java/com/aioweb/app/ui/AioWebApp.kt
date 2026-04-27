@@ -158,7 +158,35 @@ fun AioWebApp() {
                     )
                 }
                 composable(Tab.Ai.route)       { AiScreen() }
-                composable(Tab.Library.route)  { LibraryScreen() }
+                composable(Tab.Library.route)  {
+                    LibraryScreen(
+                        onOpenPlaylist = { id, title ->
+                            val i = URLEncoder.encode(id, "UTF-8")
+                            val t = URLEncoder.encode(title, "UTF-8")
+                            nav.navigate("yt-playlist/$i/$t")
+                        },
+                        onOpenArtist = { url ->
+                            val u = URLEncoder.encode(url, "UTF-8")
+                            nav.navigate("artist/$u")
+                        },
+                    )
+                }
+                composable(
+                    "yt-playlist/{id}/{title}",
+                    arguments = listOf(
+                        navArgument("id") { type = NavType.StringType },
+                        navArgument("title") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    val id = URLDecoder.decode(entry.arguments!!.getString("id")!!, "UTF-8")
+                    val title = URLDecoder.decode(entry.arguments!!.getString("title")!!, "UTF-8")
+                    com.aioweb.app.ui.screens.YtPlaylistScreen(
+                        playlistId = id,
+                        title = title,
+                        onBack = { nav.popBackStack() },
+                        onPlay = { /* TODO: wire to MusicPlaybackService */ },
+                    )
+                }
                 composable(Tab.Adult.route) {
                     AdultScreen(onPlay = { videoId, embed, title ->
                         val v = URLEncoder.encode(videoId, "UTF-8")
