@@ -169,14 +169,38 @@ internal fun JsonElement?.runsText(): String? {
         .takeIf { it.isNotBlank() }
 }
 
-/** Pick the largest thumbnail URL out of a `{ thumbnails: [...] }` object. */
+/** Pick the largest thumbnail URL out of a `{ thumbnails: [...] }` object.
+ *  Handles every layer YouTube nests it at:
+ *   • `thumbnailRenderer.musicThumbnailRenderer.thumbnail.thumbnails[]`
+ *   • `musicThumbnailRenderer.thumbnail.thumbnails[]`
+ *   • plain `{ thumbnails: [...] }`
+ *  After picking the URL we also upgrade the size suffix (`=w60-h60-...`) to a
+ *  544×544 variant so grid tiles and track rows don't render as 60px blobs. */
 internal fun JsonElement?.bestThumbnail(): String? {
     if (this !is JsonObject) return null
-    val list = (this["thumbnails"] as? JsonArray)
-        ?: ((this["musicThumbnailRenderer"] as? JsonObject)
-            ?.get("thumbnail") as? JsonObject)
-            ?.get("thumbnails") as? JsonArray
-        ?: return null
-    return list.mapNotNull { it.jsonObject["url"]?.jsonPrimitive?.contentOrNull }
+    // Drill down through whichever wrapper layer YouTube used.
+    fun thumbs(o: JsonObject): JsonArray? {
+        (o["thumbnails"] as? JsonArray)?.let { return it }
+        val thumbObj = o["thumbnail"] as? JsonObject
+        (thumbObj?.get("thumbnails") as? JsonArray)?.let { return it }
+        val musicInner = o["musicThumbnailRenderer"] as? JsonObject
+        if (musicInner != null) thumbs(musicInner)?.let { return it }
+        val rendererOuter = o["thumbnailRenderer"] as? JsonObject
+        if (rendererOuter != null) thumbs(rendererOuter)?.let { return it }
+        return null
+    }
+    val list = thumbs(this) ?: return null
+    val raw = list.mapNotNull { it.jsonObject["url"]?.jsonPrimitive?.contentOrNull }
         .lastOrNull()
+        ?: return null
+    return raw.upgradeToHqSize()
+}
+
+/** YouTube image URLs end with `=w60-h60-l90-rj` or `=s60-c`. Replace the size
+ *  (whichever is first) with `w544-h544-l90-rj` to get a crisp 544px artwork. */
+private fun String.upgradeToHqSize(): String {
+    val cut = indexOf('=')
+    if (cut < 0) return this
+    val base = substring(0, cut)
+    return "$base=w544-h544-l90-rj"
 }

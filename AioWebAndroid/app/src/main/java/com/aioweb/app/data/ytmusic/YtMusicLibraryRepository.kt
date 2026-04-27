@@ -102,10 +102,7 @@ object YtMusicLibraryRepository {
             val subtitle = flexColumns.getOrNull(1)?.jsonObject
                 ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
                 ?.get("text").runsText()
-            val thumb = (item["thumbnail"] as? JsonObject)
-                ?.get("musicThumbnailRenderer")?.jsonObject
-                ?.bestThumbnail()
-                ?: (item["thumbnail"] as? JsonObject)?.bestThumbnail()
+            val thumb = item["thumbnail"].bestThumbnail()
             YtmLibraryArtist(
                 channelId = channelId,
                 name = name,
@@ -140,9 +137,9 @@ object YtMusicLibraryRepository {
         val titleEl = renderer["title"] ?: return null
         val title = titleEl.runsText() ?: return null
         val subtitle = renderer["subtitle"].runsText()
-        val thumb = (renderer["thumbnailRenderer"] as? JsonObject)
-            ?.get("musicThumbnailRenderer")?.jsonObject
-            ?.bestThumbnail()
+        // Walk through `thumbnailRenderer` itself — the bestThumbnail helper
+        // drills down through every nested level YouTube uses.
+        val thumb = renderer["thumbnailRenderer"].bestThumbnail()
         val playlistId = titleEl.firstNavigationBrowseId()
             ?: renderer.firstNavigationBrowseId()
             ?: return null
@@ -189,9 +186,7 @@ object YtMusicLibraryRepository {
             ?.get("text").runsText()
             ?.parseDuration()
 
-        val thumb = (item["thumbnail"] as? JsonObject)
-            ?.get("musicThumbnailRenderer")?.jsonObject
-            ?.bestThumbnail()
+        val thumb = item["thumbnail"].bestThumbnail()
 
         return YtmSong(
             videoId = videoId,
