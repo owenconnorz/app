@@ -185,9 +185,10 @@ dependencies {
     // object rest destructuring, both of which Rhino chokes on. QuickJS supports
     // full ES2020+ natively (it's the same engine used by Bun, edge runtimes, etc.).
     //
-    // dokar3/quickjs-kt provides idiomatic Kotlin coroutine bindings with `asyncFunction`
-    // backings for native fetch. ~1MB native lib per ABI.
-    implementation("io.github.dokar3:quickjs-kt:1.0.5")
+    // We pin to alpha09 because it's the last release built with Kotlin 1.9.22 —
+    // newer versions require Kotlin 2.0+ which would force-upgrade our entire
+    // toolchain (Compose compiler, kapt, ksp, etc.).
+    implementation("io.github.dokar3:quickjs-kt-android:1.0.0-alpha09")
 
     // Jackson — required by CloudStream `.cs3` plugins that call
     // `MainActivityKt.mapper.readValue(...)` or `parsedSafe<...>()`. Without it,
