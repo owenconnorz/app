@@ -155,7 +155,13 @@ dependencies {
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     // NewPipe Extractor (YouTube music/videos without API keys)
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.0")
+    // Excluded: NewPipe pulls full desktop Rhino 1.8.1 which conflicts with the
+    // Android-patched `com.faendir.rhino:rhino-android` we use for Nuvio JS providers.
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.0") {
+        exclude(group = "org.mozilla", module = "rhino")
+        exclude(group = "org.mozilla", module = "rhino-engine")
+        exclude(group = "org.mozilla", module = "rhino-runtime")
+    }
     implementation("org.jsoup:jsoup:1.17.2")
 
     // WorkManager (download queue)
