@@ -2,7 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22"
-    id("com.google.devtools.ksp") version "1.9.22-1.0.17"
+    id("com.google.devtools.ksp") version "1.9.22-1.0.17")
 }
 
 android {
@@ -117,8 +117,8 @@ dependencies {
     // NewPipe Extractor
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.1")
 
-    // QuickJS (correct library for your code)
-    implementation("io.github.dokar3:quickjs-kt:0.9.2")
+    // QuickJS (correct artifact that actually exists on Maven Central)
+    implementation("io.github.dokar3:quickjs-kt-android:0.9.2")
 
     // NanoHTTPD
     implementation("org.nanohttpd:nanohttpd:2.3.1")
