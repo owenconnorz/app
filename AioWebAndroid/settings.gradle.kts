@@ -1,7 +1,18 @@
-org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
 
-android.useAndroidX=true
-kotlin.code.style=official
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
 
-android.nonTransitiveRClass=true
-android.defaults.buildfeatures.buildconfig=true
+rootProject.name = "AioWebAndroid"
+include(":app")
