@@ -6,11 +6,3 @@ buildscript {
         mavenCentral()
     }
 }
-
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-        // ❌ DO NOT ADD JITPACK HERE
-    }
-}
