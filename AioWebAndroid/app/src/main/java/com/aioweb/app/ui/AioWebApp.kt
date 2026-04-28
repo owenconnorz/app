@@ -121,7 +121,12 @@ fun AioWebApp() {
                     // Hidden on the Music tab to avoid duplication with its rich mini-player.
                     if (currentRoute != Tab.Music.route) {
                         com.aioweb.app.ui.player.GlobalMiniPlayer(
-                            onExpand = { nav.navigate(Tab.Music.route) },
+                            onExpand = {
+                                // Route to Music tab and request that the
+                                // now-playing sheet open automatically.
+                                nav.navigate(Tab.Music.route)
+                                com.aioweb.app.ui.player.PlayerExpandBus.requestExpand()
+                            },
                         )
                     }
                     NavigationBar(

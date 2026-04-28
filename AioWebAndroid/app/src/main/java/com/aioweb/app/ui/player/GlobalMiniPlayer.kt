@@ -7,6 +7,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -99,6 +101,26 @@ fun GlobalMiniPlayer(
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surface)
                 .clickable(onClick = onExpand)
+                // Vertical drag detector — an upward fling/drag past ~24dp
+                // triggers the same expand action as tapping. Matches the
+                // Metrolist / Spotify gesture vocabulary.
+                .pointerInput(Unit) {
+                    var accumulated = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { accumulated = 0f },
+                        onDragEnd = { accumulated = 0f },
+                        onDragCancel = { accumulated = 0f },
+                    ) { _, drag ->
+                        accumulated += drag
+                        // Negative drag = upward swipe. ~60px is roughly 24dp on
+                        // most phones and prevents accidental triggers when the
+                        // user is just trying to scroll the page underneath.
+                        if (accumulated < -60f) {
+                            accumulated = 0f
+                            onExpand()
+                        }
+                    }
+                }
                 .padding(horizontal = 8.dp, vertical = 6.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {

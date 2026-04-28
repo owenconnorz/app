@@ -397,6 +397,16 @@ fun MusicScreen(
 
         // Now-Playing full sheet (lyrics + sleep timer + repeat/shuffle)
         var showNowPlaying by remember { mutableStateOf(false) }
+
+        // Listen for global "expand player" events from the GlobalMiniPlayer's
+        // swipe-up / tap gesture so the sheet opens automatically when the user
+        // arrives on the Music tab from any other tab.
+        LaunchedEffect(nowPlaying) {
+            com.aioweb.app.ui.player.PlayerExpandBus.events.collect {
+                if (nowPlaying != null) showNowPlaying = true
+            }
+        }
+
         val downloadProgressMap by com.aioweb.app.data.downloads.MusicDownloader
             .progressFlow.collectAsState(initial = emptyMap())
 

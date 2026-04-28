@@ -110,6 +110,10 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
   - Horizontal chip row (Integration → CloudStream Plugins, Account → YT Music login, AI → provider defaults).
   - Grouped sections (USER INTERFACE / PLAYER & CONTENT / PRIVACY & SECURITY / STORAGE & DATA / SYSTEM & ABOUT) with tinted-icon hub rows that expand inline.
   - About dialog with GitHub source + bug report links.
+- **(NEW — Swipe gestures, Feb 2026)**
+  - **Swipe-up on `GlobalMiniPlayer`** → opens the full NowPlayingSheet (Spotify / Metrolist gesture parity). Implemented with `pointerInput { detectVerticalDragGestures }` plus a 60px threshold to avoid accidental triggers.
+  - **`PlayerExpandBus`** — tiny `SharedFlow` that the mini-player emits to and `MusicScreen` collects, so the request crosses the navigation boundary cleanly.
+  - **Swipe-down on the NowPlayingSheet** — already provided by Material3 `ModalBottomSheet` (calls `onDismissRequest` which sets `showNowPlaying = false`). Reusing the existing chevron-down button as the visual affordance.
 - **(NEW — Endless playback + Create playlist tile, Feb 2026)**
   - **Skip / Previous fixed**: root cause was `playSong` calling `setMediaItem` which clears the queue to a single item, leaving skip controls grayed out (in the UI *and* in the system notification's media controls). Fixed by adding a Metrolist-style auto-radio.
   - **`EndlessPlayback.kt`** — uses InnerTube's `next` endpoint with `playlistId="RDAMVM<videoId>"` (the same "Start radio" mix YT Music itself builds) to fetch up to 20 related songs.
