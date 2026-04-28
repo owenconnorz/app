@@ -76,7 +76,9 @@ dependencies {
 
     // Kotlinx Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    implementation("com.jakewharton.retrofit2:converter-kotlinx-serialization:1.0.0")
+
+    // ✔ Correct artifact (the one that actually exists)
+    implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
 
     // QuickJS (requires compileSdk 36)
     implementation("io.github.dokar3:quickjs-kt-android:1.0.1")
