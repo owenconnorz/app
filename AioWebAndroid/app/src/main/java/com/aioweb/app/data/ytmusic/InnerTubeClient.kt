@@ -52,14 +52,19 @@ internal class InnerTubeClient(private val cookie: String) {
     suspend fun next(body: JsonObject): JsonObject? = postInnerTube("next", body)
 
     /**
-     * `POST /youtubei/v1/browse?ctoken=...` — page through a playlist or list
-     * shelf. The token comes from `nextContinuationData.continuation` on the
-     * previous page.
+     * `POST /youtubei/v1/browse` — page through a playlist or list shelf. The
+     * token comes from `nextContinuationData.continuation` (legacy) or
+     * `continuationCommand.token` (current) on the previous page.
+     *
+     * We send the token BOTH in query params (legacy spec) AND the request body
+     * (current spec) — InnerTube tolerates the redundancy and ignoring
+     * either-shape is what made paging silently truncate at ~100 entries.
      */
     suspend fun browseContinuation(token: String): JsonObject? = postInnerTube(
         endpoint = "browse",
         body = buildJsonObject {
             putContext()
+            put("continuation", token)
         },
         extraQuery = "&ctoken=$token&continuation=$token&type=next",
     )

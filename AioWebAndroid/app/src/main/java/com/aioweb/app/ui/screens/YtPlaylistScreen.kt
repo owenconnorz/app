@@ -103,12 +103,31 @@ fun YtPlaylistScreen(
             return@LaunchedEffect
         }
         error = null
-        tracks = withContext(Dispatchers.IO) {
+
+        // Instant-load: render the cached track list immediately so the user
+        // sees songs the moment they tap a playlist. Network fetch then
+        // refreshes in the background and replaces the list when complete.
+        val cached = withContext(Dispatchers.IO) {
+            com.aioweb.app.data.ytmusic.PlaylistCache.read(context, playlistId)
+        }
+        if (!cached.isNullOrEmpty()) tracks = cached
+
+        val fresh = withContext(Dispatchers.IO) {
             runCatching { YtMusicLibraryRepository.playlistTracks(cookie, playlistId) }
                 .getOrElse {
-                    error = it.message
-                    emptyList()
+                    if (cached.isNullOrEmpty()) error = it.message
+                    null
                 }
+        }
+        if (fresh != null) {
+            tracks = fresh
+            // Persist for next-open instant-load. Skip on empty so we never
+            // poison the cache with an aborted fetch.
+            if (fresh.isNotEmpty()) {
+                com.aioweb.app.data.ytmusic.PlaylistCache.write(context, playlistId, fresh)
+            }
+        } else if (cached == null) {
+            tracks = emptyList()
         }
     }
 
