@@ -1,6 +1,6 @@
 pluginManagement {
     repositories {
-        google()
+        google()                // REQUIRED for com.android.application
         mavenCentral()
         gradlePluginPortal()
     }
