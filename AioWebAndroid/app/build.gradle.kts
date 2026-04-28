@@ -1,8 +1,8 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22"
-    id("com.google.devtools.ksp") version "1.9.22-1.0.17")
+    id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -115,10 +115,10 @@ dependencies {
     // Palette
     implementation("androidx.palette:palette-ktx:1.0.0")
 
-    // NewPipe Extractor (requires JitPack)
+    // NewPipe Extractor (JitPack)
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.1")
 
-    // ⭐ NEW WORKING QUICKJS (replaces dead JitPack version)
+    // ⭐ WORKING QuickJS (replaces dead JitPack version)
     implementation("app.cash.quickjs:quickjs-android:0.9.2")
 
     // NanoHTTPD
