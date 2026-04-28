@@ -110,10 +110,12 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
   - Horizontal chip row (Integration → CloudStream Plugins, Account → YT Music login, AI → provider defaults).
   - Grouped sections (USER INTERFACE / PLAYER & CONTENT / PRIVACY & SECURITY / STORAGE & DATA / SYSTEM & ABOUT) with tinted-icon hub rows that expand inline.
   - About dialog with GitHub source + bug report links.
-- **(NEW — Navigation bar reorder, Feb 2026)**
-  - Added `SettingsKeys.NAV_TAB_ORDER` + `SettingsRepository.navTabOrderCsv` / `setNavTabOrder()`.
-  - New `NavOrderDialog` inside Settings with up/down arrow reordering.
-  - `AioWebApp.kt` now reads the CSV and reorders the middle tabs (Movies / Music / AI / Library-or-Adult). Settings is always pinned last so it's never lost.
+- **(NEW — Now-playing indicator + home click fix, Feb 2026)**
+  - Added `audio/PlaybackBus.kt` — global StateFlow of `nowPlayingMediaId` + `isPlaying`, hooked into `MusicController` via a single `Player.Listener`. Attached once on app start in `AioWebApp.kt`.
+  - Added `ui/components/PlayingBars.kt` — Metrolist's signature 3-bar animated equalizer. Each bar uses an independent `infiniteRepeatable` so it feels organic; freezes when paused.
+  - `PlaylistTrackRow` (YtPlaylistScreen) now overlays `PlayingBars` on the album art and tints the row primary-18% when the playback bus says this song is current.
+  - Fixed home-feed playlist tap → `MusicScreen` `YtHomePlaylistCard` was passing no `onClick`, which silently used the default empty lambda. Now wires through `onOpenPlaylist(pl.id, pl.title)`.
+- **(NEW — gitignore cleanup, Feb 2026)** Replaced corrupted 568-line `.gitignore` (had the same env-vars block duplicated 60+ times due to a `-e` heredoc bug) with the user-supplied 91-line clean version. This was confusing the platform's 3-way merger and producing phantom conflicts on `SettingsScreen.kt`.
 
 ## Backlog / next iterations
 - **P1** Picture-in-Picture (PiP) for the player

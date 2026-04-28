@@ -203,7 +203,12 @@ fun MusicScreen(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     items(section.items, key = { "${it.id}_$idx" }) { pl ->
-                                        YtHomePlaylistCard(pl)
+                                        // Route home-feed playlist taps to the
+                                        // dedicated playlist screen — same as
+                                        // the Library tab behaviour.
+                                        YtHomePlaylistCard(pl) {
+                                            onOpenPlaylist(pl.id, pl.title)
+                                        }
                                     }
                                 }
                             }

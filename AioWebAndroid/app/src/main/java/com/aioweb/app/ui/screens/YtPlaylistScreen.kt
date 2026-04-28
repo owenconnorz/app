@@ -273,22 +273,42 @@ private fun PlaylistTrackRow(
         if (downloadFraction == null) downloaded = YtPlayback.isDownloaded(context, song)
     }
 
+    // Currently-playing tracking — Metrolist parity.
+    val nowPlayingId by com.aioweb.app.audio.PlaybackBus.nowPlayingMediaId.collectAsState()
+    val isPlaying by com.aioweb.app.audio.PlaybackBus.isPlaying.collectAsState()
+    val rowMediaId = YtPlayback.watchUrl(song.videoId)
+    val isCurrent = nowPlayingId == rowMediaId
+
     Row(
         Modifier
             .fillMaxWidth()
+            .background(
+                if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                else androidx.compose.ui.graphics.Color.Transparent,
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
-            model = song.thumbnail,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-        )
+        Box(modifier = Modifier.size(52.dp)) {
+            AsyncImage(
+                model = song.thumbnail,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+            // Animated equalizer bars overlay the artwork on the active track —
+            // identical to Metrolist / OpenTune's signature playing indicator.
+            if (isCurrent) {
+                com.aioweb.app.ui.components.PlayingBars(
+                    modifier = Modifier.fillMaxSize(),
+                    paused = !isPlaying,
+                )
+            }
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -304,7 +324,8 @@ private fun PlaylistTrackRow(
                 Text(
                     song.title,
                     style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = if (isCurrent) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

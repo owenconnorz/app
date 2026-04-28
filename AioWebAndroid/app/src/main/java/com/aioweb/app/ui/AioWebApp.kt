@@ -72,6 +72,12 @@ fun AioWebApp() {
     val nsfwEnabled by sl.settings.nsfwEnabled.collectAsState(initial = false)
     val navOrderCsv by sl.settings.navTabOrderCsv.collectAsState(initial = null)
 
+    // Bind the global "now playing" bus once — every track change in the
+    // foreground media service propagates to PlaybackBus.nowPlayingMediaId.
+    LaunchedEffect(Unit) {
+        runCatching { com.aioweb.app.audio.PlaybackBus.ensureAttached(context) }
+    }
+
     val tabs = remember(nsfwEnabled, navOrderCsv) {
         // Build the pool of tabs available given the NSFW toggle — `Library` and
         // `Adult` are mutually exclusive so only one of them appears.
