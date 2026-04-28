@@ -1,20 +1,7 @@
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-        maven("https://jitpack.io")
-    }
-}
+org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
 
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-    repositories {
-        google()
-        mavenCentral()
-        maven("https://jitpack.io")
-    }
-}
+android.useAndroidX=true
+kotlin.code.style=official
 
-rootProject.name = "AioWebAndroid"
-include(":app")
+android.nonTransitiveRClass=true
+android.defaults.buildfeatures.buildconfig=true
