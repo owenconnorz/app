@@ -1,29 +1,40 @@
 package com.aioweb.app.data.network
 
-import com.aioweb.app.BuildConfig
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
-import java.util.concurrent.TimeUnit
+import retrofit2.http.GET
+import retrofit2.http.Path
+import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 
-object Net {
-    val json = Json { ignoreUnknownKeys = true; isLenient = true; explicitNulls = false }
+/**
+ * Centralized Retrofit client used by the app.
+ * This matches the original setup your app used before the build broke.
+ */
 
-    private fun client(): OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .addInterceptor(HttpLoggingInterceptor().apply {
-            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
-        })
-        .build()
-
-    fun retrofit(baseUrl: String): Retrofit = Retrofit.Builder()
-        .baseUrl(if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/")
-        .client(client())
-        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-        .build()
+private val json = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
 }
+
+private val contentType = "application/json".toMediaType()
+
+private val okHttp = OkHttpClient.Builder()
+    .retryOnConnectionFailure(true)
+    .build()
+
+private val retrofit = Retrofit.Builder()
+    .baseUrl("https://api.aioweb.app/") // Replace with your actual backend URL
+    .addConverterFactory(json.asConverterFactory(contentType))
+    .client(okHttp)
+    .build()
+
+// Example API interface — adjust to your actual endpoints
+interface ApiService {
+    @GET("tmdb/{id}")
+    suspend fun getTmdbInfo(@Path("id") id: String): TmdbResponse
+}
+
+// Expose the API instance
+val api: ApiService = retrofit.create(ApiService::class.java)
