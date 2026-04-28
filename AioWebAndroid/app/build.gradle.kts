@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.aioweb.app"
-    compileSdk = 34
+    compileSdk = 36   // ⭐ REQUIRED FOR QUICKJS 1.0.1
 
     defaultConfig {
         applicationId = "com.aioweb.app"
@@ -63,8 +63,8 @@ dependencies {
     // ⭐ Correct Retrofit converter
     implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
 
-    // ⭐ Correct QuickJS version (works with compileSdk 34)
-    implementation("io.github.dokar3:quickjs-kt-android:0.9.2")
+    // ⭐ Correct QuickJS (Android AAR, requires compileSdk 36)
+    implementation("io.github.dokar3:quickjs-kt-android:1.0.1")
 
     // AndroidX
     implementation("androidx.core:core-ktx:1.13.1")
