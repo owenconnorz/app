@@ -36,6 +36,9 @@ object YtPlayback {
      * upserts the corresponding [TrackEntity] so the Library tab stays in sync.
      *
      * Must be called off the Main thread.
+     *
+     * Speed note: Room read/write is done **after** the playable URI is in
+     * hand, so the dao round-trip never blocks the user's tap → audio gap.
      */
     private suspend fun resolvePlayable(
         context: Context,
@@ -48,19 +51,6 @@ object YtPlayback {
         val playableUri: String = cached?.localPath?.takeIf { java.io.File(it).exists() }
             ?: NewPipeRepository.resolveAudioStream(url)
 
-        val refreshed = TrackEntity(
-            url = url,
-            title = song.title,
-            artist = song.artist,
-            durationSec = song.durationSeconds ?: cached?.durationSec ?: 0L,
-            thumbnail = song.thumbnail ?: cached?.thumbnail,
-            likedAt = cached?.likedAt,
-            lastPlayed = if (bumpPlayCount) System.currentTimeMillis() else cached?.lastPlayed,
-            playCount = if (bumpPlayCount) (cached?.playCount ?: 0) + 1 else (cached?.playCount ?: 0),
-            localPath = cached?.localPath,
-        )
-        dao.upsert(refreshed)
-
         val item = MediaItem.Builder()
             .setMediaId(url)
             .setUri(playableUri)
@@ -72,7 +62,26 @@ object YtPlayback {
                     .build(),
             )
             .build()
-        item to refreshed
+
+        // Fire the Room upsert in the background so the user-perceived "tap →
+        // audio" latency only includes the network resolution, not the DB
+        // write. Library tab still reflects the change within a frame or two.
+        backgroundScope.launch {
+            val refreshed = TrackEntity(
+                url = url,
+                title = song.title,
+                artist = song.artist,
+                durationSec = song.durationSeconds ?: cached?.durationSec ?: 0L,
+                thumbnail = song.thumbnail ?: cached?.thumbnail,
+                likedAt = cached?.likedAt,
+                lastPlayed = if (bumpPlayCount) System.currentTimeMillis() else cached?.lastPlayed,
+                playCount = if (bumpPlayCount) (cached?.playCount ?: 0) + 1 else (cached?.playCount ?: 0),
+                localPath = cached?.localPath,
+            )
+            runCatching { dao.upsert(refreshed) }
+        }
+
+        item to cached
     }
 
     /** Replace current playback with [song]. */

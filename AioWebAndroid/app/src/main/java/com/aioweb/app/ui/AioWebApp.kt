@@ -122,9 +122,9 @@ fun AioWebApp() {
                     if (currentRoute != Tab.Music.route) {
                         com.aioweb.app.ui.player.GlobalMiniPlayer(
                             onExpand = {
-                                // Route to Music tab and request that the
-                                // now-playing sheet open automatically.
-                                nav.navigate(Tab.Music.route)
+                                // No tab navigation needed — the global
+                                // NowPlayingSheet renders on top of whatever
+                                // tab is active. Just emit the expand event.
                                 com.aioweb.app.ui.player.PlayerExpandBus.requestExpand()
                             },
                         )
@@ -332,5 +332,8 @@ fun AioWebApp() {
                 }
             }
         }
+        // App-wide NowPlayingSheet — renders on TOP of whatever tab is active
+        // so swipe-up on the GlobalMiniPlayer works from any screen.
+        com.aioweb.app.ui.player.GlobalNowPlayingSheet()
     }
 }

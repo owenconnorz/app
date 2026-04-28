@@ -113,15 +113,34 @@ object YtMusicLibraryRepository {
     }
 
     /**
-     * Load the track list of a specific YT Music playlist by id. Used when the user
-     * taps a playlist card in the Library.
+     * Load the FULL track list of a YT Music playlist by id, following
+     * `continuations[].nextContinuationData` until exhausted.
+     *
+     * The first browse response only carries the first ~100 songs and a
+     * continuation token; subsequent pages come from the `next` endpoint with
+     * `?ctoken=...&continuation=...&type=next`. Metrolist parity — without
+     * this, mega-playlists (Liked, history mixes) silently truncate at 100.
      */
     suspend fun playlistTracks(cookie: String, playlistId: String): List<YtmSong> =
         withContext(Dispatchers.IO) {
             val client = InnerTubeClient(cookie)
             val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
-            val resp = client.browse(browseId) ?: return@withContext emptyList()
-            resp.collectResponsiveListItems().mapNotNull { parseResponsiveSong(it) }
+            val first = client.browse(browseId) ?: return@withContext emptyList()
+
+            val collected = mutableListOf<YtmSong>()
+            collected += first.collectResponsiveListItems().mapNotNull { parseResponsiveSong(it) }
+
+            var token = first.findContinuationToken()
+            // Cap at 50 pages (~5000 songs) so a runaway response doesn't loop forever.
+            var safetyPages = 50
+            while (!token.isNullOrBlank() && safetyPages-- > 0) {
+                val page = client.browseContinuation(token) ?: break
+                val before = collected.size
+                collected += page.collectResponsiveListItems().mapNotNull { parseResponsiveSong(it) }
+                if (collected.size == before) break // no progress, bail
+                token = page.findContinuationToken()
+            }
+            collected.distinctBy { it.videoId }
         }
 
     // ───────────────────────── parsers ─────────────────────────

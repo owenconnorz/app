@@ -110,7 +110,11 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
   - Horizontal chip row (Integration → CloudStream Plugins, Account → YT Music login, AI → provider defaults).
   - Grouped sections (USER INTERFACE / PLAYER & CONTENT / PRIVACY & SECURITY / STORAGE & DATA / SYSTEM & ABOUT) with tinted-icon hub rows that expand inline.
   - About dialog with GitHub source + bug report links.
-- **(NEW — Swipe gestures, Feb 2026)**
+- **(NEW — Pagination + global player + speed-ups, Feb 2026)**
+  - **Playlist 100-song limit fixed**: `YtMusicLibraryRepository.playlistTracks` now follows `nextContinuationData.continuation` tokens via the new `InnerTubeClient.browseContinuation(token)` (and a `findContinuationToken()` JSON walker). Capped at 50 pages (~5000 songs) to avoid runaway loops. Metrolist parity.
+  - **Swipe-up from any tab now opens the full player**: extracted a controller-driven `NowPlayingShell` + `GlobalNowPlayingSheet` and rendered them at the AioWebApp root (above the NavHost). The `GlobalMiniPlayer` now just emits a `PlayerExpandBus` event — no tab navigation — so the sheet appears on whatever tab the user is on (Library / Movies / AI / Settings).
+  - **Tap-to-play latency reduced**: `YtPlayback.resolvePlayable` no longer blocks on the `dao.upsert` round-trip — Room write is fired-and-forgotten on a background SupervisorJob scope so the user only waits on NewPipe URL resolution before audio starts.
+  - **Removed auto GitHub Release publish** from `.github/workflows/build-apk.yml` — APK still builds + uploads as an Actions artifact, but you create releases manually now.
   - **Swipe-up on `GlobalMiniPlayer`** → opens the full NowPlayingSheet (Spotify / Metrolist gesture parity). Implemented with `pointerInput { detectVerticalDragGestures }` plus a 60px threshold to avoid accidental triggers.
   - **`PlayerExpandBus`** — tiny `SharedFlow` that the mini-player emits to and `MusicScreen` collects, so the request crosses the navigation boundary cleanly.
   - **Swipe-down on the NowPlayingSheet** — already provided by Material3 `ModalBottomSheet` (calls `onDismissRequest` which sets `showNowPlaying = false`). Reusing the existing chevron-down button as the visual affordance.

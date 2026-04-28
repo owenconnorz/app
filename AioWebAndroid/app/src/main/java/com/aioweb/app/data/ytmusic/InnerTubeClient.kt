@@ -51,10 +51,27 @@ internal class InnerTubeClient(private val cookie: String) {
     /** `POST /youtubei/v1/next` — used to follow playlist pagination cursors. */
     suspend fun next(body: JsonObject): JsonObject? = postInnerTube("next", body)
 
-    private suspend fun postInnerTube(endpoint: String, body: JsonObject): JsonObject? {
+    /**
+     * `POST /youtubei/v1/browse?ctoken=...` — page through a playlist or list
+     * shelf. The token comes from `nextContinuationData.continuation` on the
+     * previous page.
+     */
+    suspend fun browseContinuation(token: String): JsonObject? = postInnerTube(
+        endpoint = "browse",
+        body = buildJsonObject {
+            putContext()
+        },
+        extraQuery = "&ctoken=$token&continuation=$token&type=next",
+    )
+
+    private suspend fun postInnerTube(
+        endpoint: String,
+        body: JsonObject,
+        extraQuery: String = "",
+    ): JsonObject? {
         return try {
             val url = "https://music.youtube.com/youtubei/v1/$endpoint" +
-                "?prettyPrint=false&alt=json"
+                "?prettyPrint=false&alt=json$extraQuery"
             val reqBuilder = Request.Builder()
                 .url(url)
                 .post(body.toString().toRequestBody("application/json".toMediaType()))
@@ -159,6 +176,32 @@ internal fun JsonElement.collectResponsiveListItems(): List<JsonObject> =
 internal fun JsonElement.collectTwoRowItems(): List<JsonObject> =
     findAll("musicTwoRowItemRenderer")
         .mapNotNull { it as? JsonObject }
+
+/**
+ * Pull a `continuations[].nextContinuationData.continuation` (or
+ * `continuationCommand.token`) out of any place YT Music nests it. Returns
+ * null when the page has no continuation, indicating the playlist is fully
+ * loaded.
+ */
+internal fun JsonElement.findContinuationToken(): String? {
+    val continuations = findAll("continuations")
+    for (cs in continuations) {
+        val arr = cs as? JsonArray ?: continue
+        for (entry in arr) {
+            val obj = entry as? JsonObject ?: continue
+            (obj["nextContinuationData"] as? JsonObject)?.get("continuation")
+                ?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                ?.let { return it }
+            (obj["nextRadioContinuationData"] as? JsonObject)?.get("continuation")
+                ?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                ?.let { return it }
+        }
+    }
+    // Newer responses wrap in `continuationCommand.token`.
+    return findAll("continuationCommand")
+        .mapNotNull { (it as? JsonObject)?.get("token")?.jsonPrimitive?.contentOrNull }
+        .firstOrNull { it.isNotBlank() }
+}
 
 /** Extract a runs-style title — YT wraps text as `{ runs: [{ text: "..." }, ...] }`. */
 internal fun JsonElement?.runsText(): String? {

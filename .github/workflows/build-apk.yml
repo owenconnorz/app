@@ -95,15 +95,3 @@ jobs:
           name: StreamCloud-apks
           path: AioWebAndroid/artifacts/*.apk
           retention-days: 30
-
-      # ---------- Publish a GitHub Release with the signed release APK ----------
-      - name: Create GitHub Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          name: StreamCloud build ${{ github.run_number }}
-          files: AioWebAndroid/artifacts/StreamCloud-release-${{ github.run_number }}.apk
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
