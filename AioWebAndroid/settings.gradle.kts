@@ -11,7 +11,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // ❌ DO NOT ADD JITPACK HERE
     }
 }
 
