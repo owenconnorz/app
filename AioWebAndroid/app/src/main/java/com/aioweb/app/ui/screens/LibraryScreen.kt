@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CloudDone
@@ -616,6 +617,20 @@ private fun YtArtistTile(a: YtmLibraryArtist, onClick: () -> Unit) {
 
 @Composable
 private fun YtSongRow(s: YtmSong, onClick: () -> Unit) {
+    val context = LocalContext.current
+    // Check the downloaded state of this row's track without blocking the UI
+    // thread — flips the tick on as soon as the file lands on disk.
+    var downloaded by remember(s.videoId) {
+        mutableStateOf(com.aioweb.app.data.ytmusic.YtPlayback.isDownloaded(context, s))
+    }
+    val downloadProgressMap by com.aioweb.app.data.downloads.MusicDownloader.progressFlow
+        .collectAsState(initial = emptyMap())
+    LaunchedEffect(s.videoId, downloadProgressMap) {
+        if (downloadProgressMap[com.aioweb.app.data.ytmusic.YtPlayback.watchUrl(s.videoId)] == null) {
+            downloaded = com.aioweb.app.data.ytmusic.YtPlayback.isDownloaded(context, s)
+        }
+    }
+
     Row(
         Modifier
             .fillMaxWidth()
@@ -641,13 +656,24 @@ private fun YtSongRow(s: YtmSong, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                s.artist,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (downloaded) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = "Downloaded",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(
+                    s.artist,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         com.aioweb.app.ui.components.SongRowMenu(song = s, onPlay = onClick)
     }

@@ -34,6 +34,7 @@ object SettingsKeys {
     val YT_MUSIC_USER_NAME = stringPreferencesKey("yt_music_user_name")
     val YT_MUSIC_USER_AVATAR = stringPreferencesKey("yt_music_user_avatar")
     val NAV_TAB_ORDER = stringPreferencesKey("nav_tab_order")     // CSV of tab ids (movies,music,ai,library|adult)
+    val PLAYLIST_THUMBS = stringPreferencesKey("playlist_thumbs") // JSON {playlistId: uriString}
 }
 
 class SettingsRepository(private val context: Context) {
@@ -76,6 +77,15 @@ class SettingsRepository(private val context: Context) {
      */
     val navTabOrderCsv: Flow<String?> = context.dataStore.data.map { it[SettingsKeys.NAV_TAB_ORDER] }
 
+    /**
+     * User-chosen custom playlist cover art, keyed by playlist id. Stored as a
+     * JSON object `{playlistId: uriString}` so we don't need a Room migration
+     * for what is essentially a UI preference.
+     */
+    val playlistThumbsJson: Flow<String> = context.dataStore.data.map {
+        it[SettingsKeys.PLAYLIST_THUMBS] ?: "{}"
+    }
+
     suspend fun setBackendUrl(url: String) = context.dataStore.edit { it[SettingsKeys.BACKEND_URL] = url }
     suspend fun setAiProvider(p: String) = context.dataStore.edit { it[SettingsKeys.AI_PROVIDER] = p }
     suspend fun setAiModel(m: String) = context.dataStore.edit { it[SettingsKeys.AI_MODEL] = m }
@@ -100,6 +110,27 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setNavTabOrder(ids: List<String>) =
         context.dataStore.edit { it[SettingsKeys.NAV_TAB_ORDER] = ids.joinToString(",") }
+
+    suspend fun setPlaylistThumb(playlistId: String, uri: String?) =
+        context.dataStore.edit { prefs ->
+            val current = prefs[SettingsKeys.PLAYLIST_THUMBS] ?: "{}"
+            // Light-touch JSON edit — avoids pulling in a JSON lib for this
+            // single-key map operation. Handles up to dozens of playlists fine.
+            val map = current
+                .removePrefix("{").removeSuffix("}")
+                .split(",").filter { it.isNotBlank() }
+                .mapNotNull {
+                    val parts = it.split(":", limit = 2)
+                    if (parts.size != 2) return@mapNotNull null
+                    parts[0].trim().trim('"') to parts[1].trim().trim('"')
+                }
+                .toMap()
+                .toMutableMap()
+            if (uri.isNullOrBlank()) map.remove(playlistId) else map[playlistId] = uri
+            prefs[SettingsKeys.PLAYLIST_THUMBS] = map.entries.joinToString(",", "{", "}") {
+                "\"${it.key}\":\"${it.value}\""
+            }
+        }
 
     suspend fun setYtMusicCookie(cookie: String) =
         context.dataStore.edit { it[SettingsKeys.YT_MUSIC_COOKIE] = cookie }

@@ -11,10 +11,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
@@ -72,6 +74,28 @@ fun YtPlaylistScreen(
 
     val downloadProgress by com.aioweb.app.data.downloads.MusicDownloader.progressFlow
         .collectAsState(initial = emptyMap())
+
+    // Custom playlist thumbnail (user-picked from device storage). Falls back
+    // to the first track's artwork when no override is set. Stored in
+    // SettingsRepository as a JSON map, persisted across app restarts.
+    val playlistThumbsJson by sl.settings.playlistThumbsJson.collectAsState(initial = "{}")
+    val customThumbUri = remember(playlistThumbsJson, playlistId) {
+        val regex = Regex("\"${Regex.escape(playlistId)}\"\\s*:\\s*\"([^\"]+)\"")
+        regex.find(playlistThumbsJson)?.groupValues?.getOrNull(1)
+    }
+    val pickThumb = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        // Persist read access across reboots so Coil can load the URI later.
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+        scope.launch { sl.settings.setPlaylistThumb(playlistId, uri.toString()) }
+    }
 
     LaunchedEffect(playlistId, cookie) {
         if (cookie.isBlank()) {
@@ -145,7 +169,7 @@ fun YtPlaylistScreen(
                 item {
                     PlaylistHero(
                         title = title,
-                        coverArt = list.firstOrNull()?.thumbnail,
+                        coverArt = customThumbUri ?: list.firstOrNull()?.thumbnail,
                         trackCount = list.size,
                         onPlay = { playSongHandoff(list, 0) },
                         onShuffle = {
@@ -154,6 +178,7 @@ fun YtPlaylistScreen(
                                 runCatching { YtPlayback.playPlaylist(context, shuffled, 0) }
                             }
                         },
+                        onEditCover = { pickThumb.launch(arrayOf("image/*")) },
                     )
                 }
                 itemsIndexed(
@@ -180,6 +205,7 @@ private fun PlaylistHero(
     trackCount: Int,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
+    onEditCover: () -> Unit,
 ) {
     Column(
         Modifier
@@ -214,6 +240,22 @@ private fun PlaylistHero(
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(64.dp),
+                )
+            }
+            // Pencil overlay — bottom-right, opens the system file picker so
+            // the user can swap the playlist cover with any image on device.
+            androidx.compose.material3.SmallFloatingActionButton(
+                onClick = onEditCover,
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp),
+            ) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "Edit playlist cover",
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }
@@ -314,7 +356,7 @@ private fun PlaylistTrackRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (downloaded) {
                     Icon(
-                        Icons.Default.DownloadDone,
+                        Icons.Default.CheckCircle,
                         contentDescription = "Downloaded",
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(14.dp),

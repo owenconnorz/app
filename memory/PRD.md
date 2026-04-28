@@ -110,6 +110,9 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
   - Horizontal chip row (Integration → CloudStream Plugins, Account → YT Music login, AI → provider defaults).
   - Grouped sections (USER INTERFACE / PLAYER & CONTENT / PRIVACY & SECURITY / STORAGE & DATA / SYSTEM & ABOUT) with tinted-icon hub rows that expand inline.
   - About dialog with GitHub source + bug report links.
+- **(NEW — Downloaded badge + custom playlist cover, Feb 2026)**
+  - Replaced the `DownloadDone` glyph with `CheckCircle` everywhere a downloaded indicator appears — playlist tracks (YtPlaylistScreen) and Library Songs tab (YtSongRow). Tick now reactively flips on as soon as a download finishes (subscribed to `MusicDownloader.progressFlow`).
+  - **Edit playlist cover** — small pencil FAB on the bottom-right of the playlist hero artwork. Tap → system file picker (`ActivityResultContracts.OpenDocument` with `image/*`) → user-picked URI is persisted to `SettingsRepository.playlistThumbsJson` (new JSON map keyed by playlist id) with `takePersistableUriPermission` so Coil can load it after reboot. Falls back to the first track's artwork when no override is set.
 - **(NEW — Unified mini-player, Feb 2026)**
   - Replaced the in-Music-tab `MiniPlayer` (driven by `MusicViewModel.state`) with the same `GlobalMiniPlayer` (driven by `MusicController` / `PlaybackBus` / Room). Eliminates the dual-state desync where tapping a song from a Library playlist updated the foreground service but the Music tab's mini-player still showed the previous track.
   - `GlobalMiniPlayer` now visibly matches the rich Music-tab look 1:1 — album art + title + artist + Like ❤ + Download ⬇ + Skip prev ⏮ + Play/Pause + Skip next ⏭ + thin progress bar — and reads its like/downloaded status from Room directly so it stays consistent everywhere.
