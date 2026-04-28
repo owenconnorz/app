@@ -395,78 +395,14 @@ fun MusicScreen(
             }
         }
 
-        // Now-Playing full sheet (lyrics + sleep timer + repeat/shuffle).
-        // Global expand events are handled by GlobalNowPlayingSheet at the
-        // root level — this local sheet only opens via the in-Music MiniPlayer's
-        // explicit tap.
-        var showNowPlaying by remember { mutableStateOf(false) }
-
-        val downloadProgressMap by com.aioweb.app.data.downloads.MusicDownloader
-            .progressFlow.collectAsState(initial = emptyMap())
-
-        // Mini player bar
-        nowPlaying?.let { track ->
-            val dlProgress = downloadProgressMap[track.url]
-            val downloaded = state.recent.firstOrNull { it.url == track.url }?.localPath != null ||
-                state.liked.firstOrNull { it.url == track.url }?.localPath != null
-            MiniPlayer(
-                track = track,
-                isPlaying = isPlaying,
-                isLiked = state.isCurrentLiked,
-                isDownloaded = downloaded,
-                downloadProgress = dlProgress,
-                onToggle = { if (player?.isPlaying == true) player?.pause() else player?.play() },
-                onLike = { vm.toggleLikeCurrent() },
-                onDownload = {
-                    val ctx = context
-                    dlScope.launch {
-                        runCatching {
-                            com.aioweb.app.data.downloads.MusicDownloader
-                                .download(ctx, track.url, track.title)
-                        }
-                    }
-                },
-                onExpand = { showNowPlaying = true },
-                onSkipNext = {
-                    val idx = state.tracks.indexOfFirst { it.url == track.url }
-                    state.tracks.getOrNull(idx + 1)?.let { next ->
-                        vm.play(next) { audioUrl -> player?.let { playTrack(it, next, audioUrl) } }
-                    }
-                },
-                onSkipPrev = {
-                    val idx = state.tracks.indexOfFirst { it.url == track.url }
-                    state.tracks.getOrNull(idx - 1)?.let { prev ->
-                        vm.play(prev) { audioUrl -> player?.let { playTrack(it, prev, audioUrl) } }
-                    }
-                },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
-        }
-        if (showNowPlaying && nowPlaying != null) {
-            val downloaded = state.recent.firstOrNull { it.url == nowPlaying.url }?.localPath != null ||
-                state.liked.firstOrNull { it.url == nowPlaying.url }?.localPath != null
-            val dlProgress = downloadProgressMap[nowPlaying.url]
-            NowPlayingSheet(
-                track = nowPlaying,
-                player = player,
-                state = state,
-                isDownloaded = downloaded,
-                downloadProgress = dlProgress,
-                onDismiss = { showNowPlaying = false },
-                onSetSleepTimer = { mins -> vm.startSleepTimer(mins) { player?.pause() } },
-                onCancelSleepTimer = { vm.cancelSleepTimer() },
-                onLike = { vm.toggleLikeCurrent() },
-                onDownload = {
-                    val ctx = context
-                    dlScope.launch {
-                        runCatching {
-                            com.aioweb.app.data.downloads.MusicDownloader
-                                .download(ctx, nowPlaying.url, nowPlaying.title)
-                        }
-                    }
-                },
-            )
-        }
+        // Reuse the SAME global mini-player on the Music tab so any track that
+        // started on a different tab (Library playlist, AI generated, etc.)
+        // also reflects here. This eliminates the dual-state desync where the
+        // Music tab's `MusicViewModel` showed a different track than the
+        // foreground service was actually playing.
+        com.aioweb.app.ui.player.GlobalMiniPlayer(
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }
 

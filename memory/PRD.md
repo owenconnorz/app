@@ -110,6 +110,9 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
   - Horizontal chip row (Integration → CloudStream Plugins, Account → YT Music login, AI → provider defaults).
   - Grouped sections (USER INTERFACE / PLAYER & CONTENT / PRIVACY & SECURITY / STORAGE & DATA / SYSTEM & ABOUT) with tinted-icon hub rows that expand inline.
   - About dialog with GitHub source + bug report links.
+- **(NEW — Unified mini-player, Feb 2026)**
+  - Replaced the in-Music-tab `MiniPlayer` (driven by `MusicViewModel.state`) with the same `GlobalMiniPlayer` (driven by `MusicController` / `PlaybackBus` / Room). Eliminates the dual-state desync where tapping a song from a Library playlist updated the foreground service but the Music tab's mini-player still showed the previous track.
+  - `GlobalMiniPlayer` now visibly matches the rich Music-tab look 1:1 — album art + title + artist + Like ❤ + Download ⬇ + Skip prev ⏮ + Play/Pause + Skip next ⏭ + thin progress bar — and reads its like/downloaded status from Room directly so it stays consistent everywhere.
 - **(NEW — Pagination + global player + speed-ups, Feb 2026)**
   - **Playlist 100-song limit fixed**: `YtMusicLibraryRepository.playlistTracks` now follows `nextContinuationData.continuation` tokens via the new `InnerTubeClient.browseContinuation(token)` (and a `findContinuationToken()` JSON walker). Capped at 50 pages (~5000 songs) to avoid runaway loops. Metrolist parity.
   - **Swipe-up from any tab now opens the full player**: extracted a controller-driven `NowPlayingShell` + `GlobalNowPlayingSheet` and rendered them at the AioWebApp root (above the NavHost). The `GlobalMiniPlayer` now just emits a `PlayerExpandBus` event — no tab navigation — so the sheet appears on whatever tab the user is on (Library / Movies / AI / Settings).
