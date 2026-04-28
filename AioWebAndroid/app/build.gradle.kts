@@ -113,7 +113,7 @@ dependencies {
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.1")
 
     // QuickJS
-    implementation("com.github.dokar3:quickjs-kt:0.3.0")
+    implementation("com.github.dokar3:quickjs-kt:0.3.0-alpha05")
 
     // NanoHTTPD
     implementation("org.nanohttpd:nanohttpd:2.3.1")
