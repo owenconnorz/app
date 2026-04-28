@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22"
+    id("com.google.devtools.ksp") version "1.9.22-1.0.17"
 }
 
 android {
@@ -37,6 +38,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
@@ -60,15 +62,32 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
+    // Navigation Compose (fixes rememberNavController, NavHost, composable)
+    implementation("androidx.navigation:navigation-compose:2.7.7")
+
     // ViewModel + coroutines
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+
+    // DataStore (fixes preferencesDataStore, stringPreferencesKey)
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // Room (fixes Entity, Dao, RoomDatabase)
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
 
     // Coil
     implementation("io.coil-kt:coil-compose:2.6.0")
 
-    // OkHttp
+    // OkHttp + logging interceptor (fixes HttpLoggingInterceptor)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // Retrofit + kotlinx serialization converter (fixes Retrofit, GET, POST, Body, Query)
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
 
     // Jsoup
     implementation("org.jsoup:jsoup:1.17.2")
@@ -81,9 +100,25 @@ dependencies {
 
     // Media3
     implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.3.1")
+    implementation("androidx.media3:media3-exoplayer-dash:1.3.1")
+    implementation("androidx.media3:media3-session:1.3.1")
     implementation("androidx.media3:media3-ui:1.3.1")
     implementation("androidx.media3:media3-common:1.3.1")
 
     // Palette
     implementation("androidx.palette:palette-ktx:1.0.0")
+
+    // NewPipe Extractor (fixes schabi/newpipe references)
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.1")
+
+    // QuickJS (fixes dokar/quickjs references)
+    implementation("io.github.dokar3:quickjs-kt:0.3.0")
+
+    // NanoHTTPD (fixes NanoHTTPD, IHTTPSession)
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+
+    // libtorrent4j (fixes libtorrent4j references)
+    implementation("org.libtorrent4j:libtorrent4j:2.1.0-29")
+    implementation("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-29")
 }
