@@ -19,7 +19,6 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,7 +32,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Setup Gradle (with caching)
+      - name: Setup Gradle (with caching + retry on transient CDN failures)
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: wrapper
@@ -49,9 +48,14 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # ---------- Decode the release keystore ----------
-      - name: Decode release keystore (best-effort)
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+      # ---------- Decode the release keystore from GitHub Secrets ----------
+      # Required secrets (Settings → Secrets and variables → Actions):
+      #   KEYSTORE_BASE64    – `base64 -w0 release.keystore`
+      #   KEYSTORE_PASSWORD  – store password
+      #   KEY_ALIAS          – key alias
+      #   KEY_PASSWORD       – key password
+      - name: Decode release keystore (best-effort, skip signing if it fails)
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         continue-on-error: true
@@ -60,4 +64,34 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -di > "$RUNNER_TEMP/release.keystore" 2>/dev/null
           SIZE=$(stat -c%s "$RUNNER_TEMP/release.keystore" 2>/dev/null || echo 0)
           if [ "$SIZE" -gt 1000 ]; then
-            echo "KEYSTORE_PATH=$RUNNER_TEMP/re
+            echo "✅ Keystore decoded OK ($SIZE bytes)"
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> $GITHUB_ENV
+          else
+            echo "::warning::KEYSTORE_BASE64 secret is invalid or truncated ($SIZE bytes after decode). Release APK will be UNSIGNED."
+            rm -f "$RUNNER_TEMP/release.keystore"
+          fi
+          exit 0
+
+      - name: Build Debug + Release APKs (release auto-signed via streamcloud-debug.jks fallback)
+        run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
+
+      - name: Collect APK artifacts
+        run: |
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk \
+             "artifacts/StreamCloud-debug-${{ github.run_number }}.apk" || true
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk \
+               "artifacts/StreamCloud-release-${{ github.run_number }}.apk"
+          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk \
+               "artifacts/StreamCloud-release-UNSIGNED-${{ github.run_number }}.apk"
+          fi
+          ls -la artifacts/
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: StreamCloud-apks
+          path: AioWebAndroid/artifacts/*.apk
+          retention-days: 30
