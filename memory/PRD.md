@@ -104,6 +104,16 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
   - Added `playNext()` / `addToQueue()` which thread-hop to Main before calling `MediaController.addMediaItem()`.
   - `playPlaylist()` now actually builds a queue (first plays immediately, rest are appended on IO).
   - Added `removeDownload()` as the counterpart to `downloadSong()`.
+- **(NEW — OpenTune-style Settings hub, Feb 2026)** Full rewrite of `SettingsScreen.kt`:
+  - Large "Settings" display title, hero card (StreamCloud icon + version chip).
+  - 2×2 big tile grid (Appearance / Player and audio / Storage / Privacy).
+  - Horizontal chip row (Integration → CloudStream Plugins, Account → YT Music login, AI → provider defaults).
+  - Grouped sections (USER INTERFACE / PLAYER & CONTENT / PRIVACY & SECURITY / STORAGE & DATA / SYSTEM & ABOUT) with tinted-icon hub rows that expand inline.
+  - About dialog with GitHub source + bug report links.
+- **(NEW — Navigation bar reorder, Feb 2026)**
+  - Added `SettingsKeys.NAV_TAB_ORDER` + `SettingsRepository.navTabOrderCsv` / `setNavTabOrder()`.
+  - New `NavOrderDialog` inside Settings with up/down arrow reordering.
+  - `AioWebApp.kt` now reads the CSV and reorders the middle tabs (Movies / Music / AI / Library-or-Adult). Settings is always pinned last so it's never lost.
 
 ## Backlog / next iterations
 - **P1** Picture-in-Picture (PiP) for the player

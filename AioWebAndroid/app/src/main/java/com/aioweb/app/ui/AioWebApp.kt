@@ -70,13 +70,32 @@ fun AioWebApp() {
     val context = LocalContext.current
     val sl = remember { ServiceLocator.get(context) }
     val nsfwEnabled by sl.settings.nsfwEnabled.collectAsState(initial = false)
+    val navOrderCsv by sl.settings.navTabOrderCsv.collectAsState(initial = null)
 
-    val tabs = remember(nsfwEnabled) {
-        if (nsfwEnabled) {
-            listOf(Tab.Movies, Tab.Music, Tab.Ai, Tab.Adult, Tab.Settings)
-        } else {
-            listOf(Tab.Movies, Tab.Music, Tab.Ai, Tab.Library, Tab.Settings)
+    val tabs = remember(nsfwEnabled, navOrderCsv) {
+        // Build the pool of tabs available given the NSFW toggle — `Library` and
+        // `Adult` are mutually exclusive so only one of them appears.
+        val pool: Map<String, Tab> = buildMap {
+            put(Tab.Movies.route, Tab.Movies)
+            put(Tab.Music.route, Tab.Music)
+            put(Tab.Ai.route, Tab.Ai)
+            if (nsfwEnabled) put(Tab.Adult.route, Tab.Adult)
+            else put(Tab.Library.route, Tab.Library)
         }
+        // Apply user-defined ordering, skipping unknown/dropped ids. Anything
+        // not listed in the CSV is appended in its natural order so new tabs
+        // remain reachable even if the user has never reordered.
+        val requestedOrder = navOrderCsv
+            ?.takeIf { it.isNotBlank() }
+            ?.split(",")
+            ?.mapNotNull { pool[it.trim()] }
+            ?.distinct()
+            .orEmpty()
+        val seen = requestedOrder.map { it.route }.toSet()
+        val middle = requestedOrder + pool.values.filter { it.route !in seen }
+        // Settings is always pinned at the end so the user can never lose
+        // access to this screen via a misconfigured nav order.
+        middle + Tab.Settings
     }
 
     Scaffold(

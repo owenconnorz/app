@@ -33,6 +33,7 @@ object SettingsKeys {
     val YT_MUSIC_COOKIE = stringPreferencesKey("yt_music_cookie")     // Raw "Cookie:" header from music.youtube.com
     val YT_MUSIC_USER_NAME = stringPreferencesKey("yt_music_user_name")
     val YT_MUSIC_USER_AVATAR = stringPreferencesKey("yt_music_user_avatar")
+    val NAV_TAB_ORDER = stringPreferencesKey("nav_tab_order")     // CSV of tab ids (movies,music,ai,library|adult)
 }
 
 class SettingsRepository(private val context: Context) {
@@ -68,6 +69,13 @@ class SettingsRepository(private val context: Context) {
     val ytMusicUserName: Flow<String> = context.dataStore.data.map { it[SettingsKeys.YT_MUSIC_USER_NAME] ?: "" }
     val ytMusicUserAvatar: Flow<String> = context.dataStore.data.map { it[SettingsKeys.YT_MUSIC_USER_AVATAR] ?: "" }
 
+    /**
+     * User-defined bottom navigation order. CSV of tab ids (subset of
+     * `movies,music,ai,library,adult`). `settings` is always appended last.
+     * Null/blank => use the hardcoded default order.
+     */
+    val navTabOrderCsv: Flow<String?> = context.dataStore.data.map { it[SettingsKeys.NAV_TAB_ORDER] }
+
     suspend fun setBackendUrl(url: String) = context.dataStore.edit { it[SettingsKeys.BACKEND_URL] = url }
     suspend fun setAiProvider(p: String) = context.dataStore.edit { it[SettingsKeys.AI_PROVIDER] = p }
     suspend fun setAiModel(m: String) = context.dataStore.edit { it[SettingsKeys.AI_MODEL] = m }
@@ -89,6 +97,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setHomeCollections(ids: List<String>) =
         context.dataStore.edit { it[SettingsKeys.HOME_COLLECTIONS] = ids.joinToString(",") }
+
+    suspend fun setNavTabOrder(ids: List<String>) =
+        context.dataStore.edit { it[SettingsKeys.NAV_TAB_ORDER] = ids.joinToString(",") }
 
     suspend fun setYtMusicCookie(cookie: String) =
         context.dataStore.edit { it[SettingsKeys.YT_MUSIC_COOKIE] = cookie }
