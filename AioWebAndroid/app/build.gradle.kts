@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.aioweb"
+    namespace = "com.aioweb.app"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.aioweb"
+        applicationId = "com.aioweb.app"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
@@ -112,8 +112,8 @@ dependencies {
     // NewPipe Extractor
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.1")
 
-    // QuickJS (via Maven Central)
-    implementation("app.cash.quickjs:quickjs-android:0.9.2")
+    // QuickJS (dokar3 via JitPack - using commit hash for stability)
+    implementation("com.github.dokar3:quickjs-kt:main-SNAPSHOT")
 
     // NanoHTTPD
     implementation("org.nanohttpd:nanohttpd:2.3.1")
