@@ -117,8 +117,8 @@ dependencies {
     // NewPipe Extractor
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.1")
 
-    // QuickJS
-    implementation("app.cash.quickjs:quickjs-android:0.9.2")
+    // QuickJS (correct library for your code)
+    implementation("io.github.dokar3:quickjs-kt:0.9.2")
 
     // NanoHTTPD
     implementation("org.nanohttpd:nanohttpd:2.3.1")
