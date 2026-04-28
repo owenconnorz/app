@@ -43,7 +43,7 @@ import com.aioweb.app.ui.screens.MovieDetailScreen
 import com.aioweb.app.ui.screens.MoviesScreen
 import com.aioweb.app.ui.screens.MusicScreen
 import com.aioweb.app.ui.screens.PluginsScreen
-import com.aioweb.app.ui.screens.SettingsScreen
+import com.aioweb.app.ui.screens.SettingsHubScreen
 import com.aioweb.app.ui.viewmodel.AdultViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.LaunchedEffect
@@ -311,7 +311,7 @@ fun AioWebApp() {
                     )
                 }
                 composable(Tab.Settings.route) {
-                    SettingsScreen(onOpenPlugins = { nav.navigate("plugins") })
+                    SettingsHubScreen(onOpenPlugins = { nav.navigate("plugins") })
                 }
                 composable("plugins") {
                     PluginsScreen(onBack = { nav.popBackStack() })
