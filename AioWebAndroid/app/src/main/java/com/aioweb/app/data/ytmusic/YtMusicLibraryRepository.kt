@@ -61,56 +61,67 @@ object YtMusicLibraryRepository {
         }
     }
 
-    private suspend fun fetchLibraryPlaylists(client: InnerTubeClient): List<YtmPlaylist> {
-        val resp = client.browse("FEmusic_liked_playlists") ?: return emptyList()
-        // The shelf we want is under the first tab → sectionListRenderer → contents.
-        // Playlists/albums come as `musicTwoRowItemRenderer` tiles within a
-        // `gridRenderer`, or a `musicShelfRenderer` for "Playlists you liked".
-        val tiles = resp.collectTwoRowItems()
-        return tiles.mapNotNull { parseTwoRowAsPlaylist(it) }
+    /** Drain a paginated browse shelf — first page + every continuation token. */
+    private suspend inline fun <T> drainBrowse(
+        client: InnerTubeClient,
+        browseId: String,
+        crossinline parsePage: (JsonObject) -> List<T>,
+    ): List<T> {
+        val first = client.browse(browseId) ?: return emptyList()
+        val out = parsePage(first).toMutableList()
+        var token = first.findContinuationToken()
+        var safety = 50
+        while (!token.isNullOrBlank() && safety-- > 0) {
+            val page = client.browseContinuation(token) ?: break
+            val before = out.size
+            out += parsePage(page)
+            if (out.size == before) break
+            token = page.findContinuationToken()
+        }
+        return out
     }
+
+    private suspend fun fetchLibraryPlaylists(client: InnerTubeClient): List<YtmPlaylist> =
+        drainBrowse(client, "FEmusic_liked_playlists") { resp ->
+            resp.collectTwoRowItems().mapNotNull { parseTwoRowAsPlaylist(it) }
+        }
 
     /**
      * YouTube Music exposes your albums under a separate `library_landing` browse ID.
      * It returns the same `musicTwoRowItemRenderer` shape as playlists, just with
      * `MUSIC_RELEASE_TYPE_ALBUM` / `MUSIC_RELEASE_TYPE_SINGLE` in the subtitle runs.
      */
-    private suspend fun fetchLibraryAlbums(client: InnerTubeClient): List<YtmPlaylist> {
-        val resp = client.browse("FEmusic_liked_albums") ?: return emptyList()
-        val tiles = resp.collectTwoRowItems()
-        return tiles.mapNotNull { parseTwoRowAsPlaylist(it, forceIsAlbum = true) }
-    }
-
-    private suspend fun fetchLikedSongs(client: InnerTubeClient): List<YtmSong> {
-        // The liked-songs *playlist id* is a stable constant; we browse it as any other
-        // playlist (VL prefix = playlist in YT terminology) to get the full track list.
-        val resp = client.browse("VLLM") ?: return emptyList()
-        val items = resp.collectResponsiveListItems()
-        return items.mapNotNull { parseResponsiveSong(it) }
-    }
-
-    private suspend fun fetchLibraryArtists(client: InnerTubeClient): List<YtmLibraryArtist> {
-        val resp = client.browse("FEmusic_library_corpus_track_artists") ?: return emptyList()
-        val items = resp.collectResponsiveListItems()
-        return items.mapNotNull { item ->
-            val flexColumns = (item["flexColumns"] as? JsonArray) ?: return@mapNotNull null
-            val nameRun = flexColumns.getOrNull(0)?.jsonObject
-                ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
-                ?.get("text")
-            val name = nameRun.runsText() ?: return@mapNotNull null
-            val channelId = nameRun?.firstNavigationBrowseId() ?: return@mapNotNull null
-            val subtitle = flexColumns.getOrNull(1)?.jsonObject
-                ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
-                ?.get("text").runsText()
-            val thumb = item["thumbnail"].bestThumbnail()
-            YtmLibraryArtist(
-                channelId = channelId,
-                name = name,
-                thumbnail = thumb,
-                subtitle = subtitle,
-            )
+    private suspend fun fetchLibraryAlbums(client: InnerTubeClient): List<YtmPlaylist> =
+        drainBrowse(client, "FEmusic_liked_albums") { resp ->
+            resp.collectTwoRowItems().mapNotNull { parseTwoRowAsPlaylist(it, forceIsAlbum = true) }
         }
-    }
+
+    private suspend fun fetchLikedSongs(client: InnerTubeClient): List<YtmSong> =
+        drainBrowse(client, "VLLM") { resp ->
+            resp.collectResponsiveListItems().mapNotNull { parseResponsiveSong(it) }
+        }
+
+    private suspend fun fetchLibraryArtists(client: InnerTubeClient): List<YtmLibraryArtist> =
+        drainBrowse(client, "FEmusic_library_corpus_track_artists") { resp ->
+            resp.collectResponsiveListItems().mapNotNull { item ->
+                val flexColumns = (item["flexColumns"] as? JsonArray) ?: return@mapNotNull null
+                val nameRun = flexColumns.getOrNull(0)?.jsonObject
+                    ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
+                    ?.get("text")
+                val name = nameRun.runsText() ?: return@mapNotNull null
+                val channelId = nameRun?.firstNavigationBrowseId() ?: return@mapNotNull null
+                val subtitle = flexColumns.getOrNull(1)?.jsonObject
+                    ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
+                    ?.get("text").runsText()
+                val thumb = item["thumbnail"].bestThumbnail()
+                YtmLibraryArtist(
+                    channelId = channelId,
+                    name = name,
+                    thumbnail = thumb,
+                    subtitle = subtitle,
+                )
+            }
+        }
 
     /**
      * Load the FULL track list of a YT Music playlist by id, following

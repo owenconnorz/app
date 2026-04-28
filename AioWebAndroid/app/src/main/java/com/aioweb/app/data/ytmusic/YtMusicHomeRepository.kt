@@ -74,6 +74,21 @@ object YtMusicHomeRepository {
                         ?: return@forEach
                     parseCarousel(shelf)?.let { add(it) }
                 }
+
+                // Drain continuation pages for endless scroll. Each page returns
+                // another batch of carousel shelves which we merge in. Capped at
+                // 12 pages to keep memory + network sane on long sessions.
+                var token = resp.findContinuationToken()
+                var safety = 12
+                while (!token.isNullOrBlank() && safety-- > 0) {
+                    val page = client.browseContinuation(token) ?: break
+                    val before = size
+                    page.findAll("musicCarouselShelfRenderer")
+                        .mapNotNull { it as? JsonObject }
+                        .forEach { shelf -> parseCarousel(shelf)?.let { add(it) } }
+                    if (size == before) break
+                    token = page.findContinuationToken()
+                }
             }
             YtMusicHomeFeed(sections = sections)
         } catch (e: Throwable) {

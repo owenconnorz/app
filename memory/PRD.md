@@ -110,6 +110,10 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
   - Horizontal chip row (Integration → CloudStream Plugins, Account → YT Music login, AI → provider defaults).
   - Grouped sections (USER INTERFACE / PLAYER & CONTENT / PRIVACY & SECURITY / STORAGE & DATA / SYSTEM & ABOUT) with tinted-icon hub rows that expand inline.
   - About dialog with GitHub source + bug report links.
+- **(NEW — Endless scroll across the music UX, Feb 2026)**
+  - Extracted a private `drainBrowse(...)` helper in `YtMusicLibraryRepository` that follows `nextContinuationData.continuation` tokens until exhausted (capped at 50 pages). Applied to **all four** library fetchers: liked playlists, liked albums, liked songs (`VLLM`), and library artists. Previously each was capped at the first 50–100 entries.
+  - **Music home feed** (`YtMusicHomeRepository.load`) now also drains 12 pages of carousel-shelf continuations — so the home feed extends as the user scrolls instead of stopping at the first batch.
+  - The earlier `playlistTracks` fix uses the same machinery; all music-side YT browse responses now share one consistent pagination strategy.
 - **(NEW — Nuvio source button fix, Feb 2026)**
   - **Root cause**: `NuvioRuntime.runProvider` was calling `evaluate<String?>("(async function(){…return JSON.stringify(arr)})()")`. quickjs-kt's `evaluate<T>` returns the Promise object as-is (does NOT unwrap), so the cast to `String?` produced `null`, fell back to `"[]"`, and every Nuvio provider silently returned zero streams — meaning the Source button on the movie player only showed Stremio results.
   - **Fix**: bound a Kotlin-side `_setResult(json)` async function. The IIFE now calls `_setResult(...)` instead of returning, which lets the host coroutine receive the resolved JSON synchronously through a captured Kotlin variable (`streamsJson`). Nuvio streams now appear in the Source button alongside Stremio streams.
