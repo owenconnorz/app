@@ -60,11 +60,11 @@ dependencies {
     // Kotlinx Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
-    // ⭐ Correct Retrofit converter (the one your app always used)
+    // ⭐ Correct Retrofit converter
     implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
 
-    // ⭐ Correct QuickJS library (matches your NuvioRuntime imports)
-    implementation("io.github.dokar3:quickjs-kt-android:1.0.1")
+    // ⭐ Correct QuickJS version (works with compileSdk 34)
+    implementation("io.github.dokar3:quickjs-kt-android:0.9.2")
 
     // AndroidX
     implementation("androidx.core:core-ktx:1.13.1")
