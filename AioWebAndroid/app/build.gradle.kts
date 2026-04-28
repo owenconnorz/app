@@ -16,12 +16,8 @@ android {
     }
 
     buildTypes {
-        release {
-            minifyEnabled false
-        }
-        debug {
-            minifyEnabled false
-        }
+        release { minifyEnabled false }
+        debug { minifyEnabled false }
     }
 
     compileOptions {
@@ -36,22 +32,16 @@ android {
 
 configurations.all {
     resolutionStrategy {
-        // 🔥 FORCE CORRECT VERSION (FIXES YOUR CRASH)
         force "com.github.LagradOst:NiceHttp:0.4.11"
     }
 }
 
 dependencies {
-
     implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.22"
 
-    // ✅ REQUIRED (correct version + correct casing)
     implementation "com.github.LagradOst:NiceHttp:0.4.11"
-
-    // ✅ Stable CloudStream (no pre-release crashes)
     implementation "com.github.recloudstream:cloudstream:4.4.0"
 
-    // Android basics
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
