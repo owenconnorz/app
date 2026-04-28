@@ -15,6 +15,11 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+
+        buildConfigField("String", "TMDB_API_KEY", "\"\"")
+        buildConfigField("String", "DEFAULT_BACKEND_URL", "\"https://api.aioweb.app\"")
+        buildConfigField("String", "GITHUB_OWNER", "\"owenconnorz\"")
+        buildConfigField("String", "GITHUB_REPO", "\"app\"")
     }
 
     buildTypes {
@@ -109,7 +114,7 @@ dependencies {
     // Palette
     implementation("androidx.palette:palette-ktx:1.0.0")
 
-    // NewPipe Extractor (JitPack)
+    // NewPipe Extractor
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.1")
 
     // QuickJS
