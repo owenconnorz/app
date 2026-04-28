@@ -1,7 +1,8 @@
 plugins {
     id("com.android.application")
-    kotlin("android")
-    id("com.google.devtools.ksp")
+    id("org.jetbrains.kotlin.android") version "1.9.24"
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.24"
+    id("com.google.devtools.ksp") version "1.9.24-1.0.20"
 }
 
 android {
@@ -11,7 +12,7 @@ android {
     defaultConfig {
         applicationId = "com.aioweb.app"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
     }
@@ -42,20 +43,20 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14" // requires Kotlin 1.9.24
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
 }
 
 dependencies {
 
-    // Kotlin (must match Compose compiler)
+    // Kotlin stdlib (must match plugin)
     implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.24")
 
-    // Coroutines compatible with Kotlin 1.9.24
+    // Coroutines (compatible with Kotlin 1.9.24)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // Compose BOM compatible with Kotlin 1.9.24
+    // Compose BOM (compatible with Kotlin 1.9.24 + compiler 1.5.14)
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
@@ -75,12 +76,12 @@ dependencies {
 
     // Kotlinx Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
+    implementation("com.jakewharton.retrofit2:converter-kotlinx-serialization:1.0.0")
 
     // QuickJS (requires compileSdk 36)
     implementation("io.github.dokar3:quickjs-kt-android:1.0.1")
 
-    // Coil (Kotlin 1.9 compatible)
+    // Coil
     implementation("io.coil-kt:coil-compose:2.6.0")
 
     // Palette
