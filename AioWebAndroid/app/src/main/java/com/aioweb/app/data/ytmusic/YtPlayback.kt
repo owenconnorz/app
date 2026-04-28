@@ -35,42 +35,47 @@ object YtPlayback {
         val url = watchUrl(song.videoId)
         val dao = LibraryDb.get(context).tracks()
         // Prefer downloaded cache for offline playback.
-        val cached = dao.byUrl(url)
+        val cached = withContext(Dispatchers.IO) { dao.byUrl(url) }
         val playableUri: String = cached?.localPath?.takeIf { java.io.File(it).exists() }
             ?: withContext(Dispatchers.IO) { NewPipeRepository.resolveAudioStream(url) }
 
         // Persist/refresh the Library entry so Liked / Downloaded / Cached tiles stay
         // in sync and the global MiniPlayer has a thumbnail & duration to show.
-        dao.upsert(
-            TrackEntity(
-                url = url,
-                title = song.title,
-                artist = song.artist,
-                durationSec = song.durationSeconds ?: cached?.durationSec ?: 0L,
-                thumbnail = song.thumbnail ?: cached?.thumbnail,
-                likedAt = cached?.likedAt,
-                lastPlayed = System.currentTimeMillis(),
-                playCount = (cached?.playCount ?: 0) + 1,
-                localPath = cached?.localPath,
-            ),
-        )
-
-        // Hand off to the global controller — this is the same MediaController the
-        // MiniPlayer reads from, so playback state updates everywhere at once.
-        val controller = MusicController.get(context.applicationContext)
-        val item = MediaItem.Builder()
-            .setUri(playableUri)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(song.title)
-                    .setArtist(song.artist)
-                    .setArtworkUri(song.thumbnail?.let(Uri::parse))
-                    .build(),
+        withContext(Dispatchers.IO) {
+            dao.upsert(
+                TrackEntity(
+                    url = url,
+                    title = song.title,
+                    artist = song.artist,
+                    durationSec = song.durationSeconds ?: cached?.durationSec ?: 0L,
+                    thumbnail = song.thumbnail ?: cached?.thumbnail,
+                    likedAt = cached?.likedAt,
+                    lastPlayed = System.currentTimeMillis(),
+                    playCount = (cached?.playCount ?: 0) + 1,
+                    localPath = cached?.localPath,
+                ),
             )
-            .build()
-        controller.setMediaItem(item)
-        controller.prepare()
-        controller.play()
+        }
+
+        // Hand off to the global controller — `MediaController` methods must run on
+        // the main thread, so switch before touching setMediaItem/prepare/play.
+        // (Bug fix: previously we were on Dispatchers.IO here, which silently failed.)
+        withContext(Dispatchers.Main) {
+            val controller = MusicController.get(context.applicationContext)
+            val item = MediaItem.Builder()
+                .setUri(playableUri)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(song.title)
+                        .setArtist(song.artist)
+                        .setArtworkUri(song.thumbnail?.let(Uri::parse))
+                        .build(),
+                )
+                .build()
+            controller.setMediaItem(item)
+            controller.prepare()
+            controller.play()
+        }
     }
 
     /**
