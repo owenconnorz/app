@@ -3,7 +3,6 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
-        maven(url = "https://jitpack.io")
     }
 }
 
@@ -12,9 +11,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven(url = "https://jitpack.io")
     }
 }
 
-rootProject.name = "StreamCloud"
+rootProject.name = "AioWebAndroid"
 include(":app")
