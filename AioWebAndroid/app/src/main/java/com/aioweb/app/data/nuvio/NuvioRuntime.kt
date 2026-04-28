@@ -160,27 +160,38 @@ object NuvioRuntime {
                 evaluate<Any?>(PREAMBLE + "\n" + scriptText)
 
                 // Locate getStreams (top-level OR module.exports), call it,
-                // and JSON-stringify the result so we can decode it on the
-                // Kotlin side without dealing with cross-runtime JsObjects.
+                // and JSON-stringify the result. Because quickjs-kt's
+                // `evaluate<T>` does NOT unwrap Promises (it returns the raw
+                // Promise object), we cannot just return from an async IIFE.
+                // Instead we bridge the result back through `_setResult`,
+                // which lets the host coroutine await the JS event loop.
+                var streamsJson = "[]"
+                asyncFunction("_setResult") { args ->
+                    streamsJson = (args.firstOrNull() as? String) ?: "[]"
+                    null
+                }
                 val seasonJs = season?.toString() ?: "undefined"
                 val episodeJs = episode?.toString() ?: "undefined"
-                val resultJson = evaluate<String?>(
+                evaluate<Any?>(
                     """
                     (async function () {
                       try {
                         var fn = (typeof getStreams === 'function')
                           ? getStreams
                           : (module && module.exports && module.exports.getStreams);
-                        if (typeof fn !== 'function') return JSON.stringify({ error: 'no_getStreams' });
+                        if (typeof fn !== 'function') {
+                          await _setResult(JSON.stringify({ error: 'no_getStreams' }));
+                          return;
+                        }
                         var arr = await fn(${jsString(tmdbId)}, ${jsString(mediaType)}, $seasonJs, $episodeJs);
-                        return JSON.stringify(arr || []);
+                        await _setResult(JSON.stringify(arr || []));
                       } catch (e) {
-                        return JSON.stringify({ error: String(e && e.message || e) });
+                        await _setResult(JSON.stringify({ error: String(e && e.message || e) }));
                       }
                     })()
                     """.trimIndent(),
-                ) ?: "[]"
-                parseStreams(resultJson)
+                )
+                parseStreams(streamsJson)
             }
         } catch (e: QuickJsException) {
             Log.w(TAG, "QuickJS error: ${e.message}", e)
