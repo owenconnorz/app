@@ -109,10 +109,10 @@ dependencies {
     // Palette
     implementation("androidx.palette:palette-ktx:1.0.0")
 
-    // NewPipe Extractor (Maven Central mirror)
-    implementation("org.schabi.newpipe.extractor:NewPipeExtractor:0.24.0")
+    // NewPipe Extractor (JitPack)
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.1")
 
-    // QuickJS (Cash App's stable Maven Central release)
+    // QuickJS
     implementation("app.cash.quickjs:quickjs-android:0.9.2")
 
     // NanoHTTPD
