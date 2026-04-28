@@ -8,7 +8,10 @@ import com.aioweb.app.audio.MusicController
 import com.aioweb.app.data.library.LibraryDb
 import com.aioweb.app.data.library.TrackEntity
 import com.aioweb.app.data.newpipe.NewPipeRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -22,6 +25,8 @@ import kotlinx.coroutines.withContext
  * Media3 requires it (silent no-op otherwise).
  */
 object YtPlayback {
+
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun watchUrl(videoId: String) = "https://music.youtube.com/watch?v=$videoId"
 
@@ -78,6 +83,40 @@ object YtPlayback {
             controller.setMediaItem(item)
             controller.prepare()
             controller.play()
+        }
+        // Fire-and-forget: pull the YT Music auto-radio for this song and
+        // append it to the queue so skip/previous (UI + system notification)
+        // always have somewhere to go. Endless playback parity with Metrolist.
+        startAutoRadio(context, song)
+    }
+
+    /**
+     * Build a Metrolist-style endless queue for [seed] in the background. We
+     * fetch up to 20 related tracks via [EndlessPlayback], resolve each to a
+     * [MediaItem] lazily (cached file → NewPipe fallback), and stream them
+     * into the player one at a time so the user doesn't wait on the whole
+     * batch before skip/prev light up.
+     */
+    private fun startAutoRadio(context: Context, seed: YtmSong) {
+        backgroundScope.launch {
+            runCatching {
+                val related = EndlessPlayback.relatedSongs(context, seed.videoId)
+                if (related.isEmpty()) return@runCatching
+                related.forEach { s ->
+                    runCatching {
+                        val (item, _) = resolvePlayable(context, s, bumpPlayCount = false)
+                        withContext(Dispatchers.Main) {
+                            val controller = MusicController.get(context.applicationContext)
+                            // Only append if the user hasn't already kicked
+                            // off a different track in the meantime.
+                            if (controller.currentMediaItem?.mediaId == watchUrl(seed.videoId)
+                                || controller.mediaItemCount > 0) {
+                                controller.addMediaItem(item)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -110,6 +110,12 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
   - Horizontal chip row (Integration → CloudStream Plugins, Account → YT Music login, AI → provider defaults).
   - Grouped sections (USER INTERFACE / PLAYER & CONTENT / PRIVACY & SECURITY / STORAGE & DATA / SYSTEM & ABOUT) with tinted-icon hub rows that expand inline.
   - About dialog with GitHub source + bug report links.
+- **(NEW — Endless playback + Create playlist tile, Feb 2026)**
+  - **Skip / Previous fixed**: root cause was `playSong` calling `setMediaItem` which clears the queue to a single item, leaving skip controls grayed out (in the UI *and* in the system notification's media controls). Fixed by adding a Metrolist-style auto-radio.
+  - **`EndlessPlayback.kt`** — uses InnerTube's `next` endpoint with `playlistId="RDAMVM<videoId>"` (the same "Start radio" mix YT Music itself builds) to fetch up to 20 related songs.
+  - **`YtPlayback.startAutoRadio()`** — fires after every `playSong()` on a background `SupervisorJob`+`Dispatchers.IO` scope. Resolves each related track lazily and appends to the queue one at a time so the user doesn't wait for the whole batch before skip/prev light up.
+  - **Create playlist tile** added to the Library Playlists grid as the very first tile — Metrolist parity with a + icon, large rounded card, plus a Material `AlertDialog` to name the playlist. (Local playlist DAO/Room schema is the next step; UI ships now with a friendly toast.)
+  - **Note for Like in notifications + Pagination**: Media3's default MediaSession already exposes Play/Pause/Skip/Prev in the system shade — those will now light up because the auto-radio populates the queue. Custom Like / Pagination are still on the backlog.
 - **(NEW — Downloads & Theme polish, Feb 2026)**
   - **Parallel downloads** — `MusicDownloader` now uses a `Semaphore(3)` so up to 3 songs download concurrently (Metrolist parity).
   - **System notifications** — `MusicDownloadNotifier` posts an ongoing progress notification per download (throttled to ~250ms updates) and a 4-second auto-dismiss "Downloaded" confirmation when complete. Uses the existing `POST_NOTIFICATIONS` permission already in the manifest.

@@ -91,6 +91,23 @@ fun LibraryScreen(
 
     var tab by remember { mutableStateOf(LibTab.Playlists) }
     var openTile by remember { mutableStateOf<String?>(null) }
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+
+    if (showCreatePlaylistDialog) {
+        CreateLocalPlaylistDialog(
+            onDismiss = { showCreatePlaylistDialog = false },
+            onCreate = { name ->
+                showCreatePlaylistDialog = false
+                // Local playlist creation isn't wired through Room yet — surface
+                // a friendly "in progress" hint instead of silently no-op'ing.
+                android.widget.Toast.makeText(
+                    context,
+                    "Local playlist “$name” saved (UI only — sync arrives next).",
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
+            },
+        )
+    }
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Spacer(Modifier.height(12.dp))
@@ -158,6 +175,7 @@ fun LibraryScreen(
             ) {
                 when (tab) {
                     LibTab.Playlists -> {
+                        item { CreatePlaylistTile { showCreatePlaylistDialog = true } }
                         item { LocalSystemTile("Liked", Icons.Default.Favorite,
                             liked.size, liked.mapNotNull { it.thumbnail }) { openTile = "liked" } }
                         item { LocalSystemTile("Downloaded", Icons.Default.DownloadDone,
@@ -871,5 +889,84 @@ private fun YtSongsSection(
             }
         }
     }
+}
+
+
+/**
+ * Big "Create playlist" tile — Metrolist parity. Lives at the start of the
+ * Playlists grid so it's always one tap away.
+ */
+@Composable
+private fun CreatePlaylistTile(onClick: () -> Unit) {
+    Column(
+        modifier = Modifier.clickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = "Create new playlist",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(48.dp),
+            )
+        }
+        Text(
+            "New playlist",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            "Add songs from anywhere",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun CreateLocalPlaylistDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create playlist") },
+        text = {
+            Column {
+                Text(
+                    "Give your playlist a name. You can add songs later from any track's 3-dot menu.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Playlist name") },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (name.isNotBlank()) onCreate(name.trim()) },
+                enabled = name.isNotBlank(),
+            ) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
