@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.aioweb.app"
-    compileSdk = 36   // ⭐ REQUIRED FOR QUICKJS 1.0.1
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.aioweb.app"
@@ -17,9 +17,7 @@ android {
     }
 
     buildTypes {
-        debug {
-            isMinifyEnabled = false
-        }
+        debug { isMinifyEnabled = false }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -34,21 +32,37 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    kotlinOptions { jvmTarget = "17" }
 
     buildFeatures {
+        compose = true
         buildConfig = true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.14" // K2 compatible
     }
 }
 
 dependencies {
 
-    // Kotlin + Coroutines
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
+    // ⭐ Kotlin 2.0 stdlib
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.0.0")
+
+    // ⭐ Coroutines compatible with Kotlin 2.x
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // ⭐ Compose BOM compatible with Kotlin 2.x
+    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Navigation
+    implementation("androidx.navigation:navigation-compose:2.7.7")
 
     // OkHttp
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -59,20 +73,24 @@ dependencies {
 
     // Kotlinx Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-
-    // ⭐ Correct Retrofit converter
     implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
 
-    // ⭐ Correct QuickJS (Android AAR, requires compileSdk 36)
+    // ⭐ QuickJS (requires compileSdk 36)
     implementation("io.github.dokar3:quickjs-kt-android:1.0.1")
+
+    // ⭐ Coil (K2 compatible)
+    implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // Palette
+    implementation("androidx.palette:palette-ktx:1.0.0")
+
+    // Media3
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-ui:1.3.1")
+    implementation("androidx.media3:media3-session:1.3.1")
 
     // AndroidX
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
-
-    // Testing
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 }
