@@ -15,87 +15,138 @@ import kotlinx.coroutines.withContext
  * Hand-off between "user tapped a YT Music item on Library / home feed" and
  * actual audio coming out of the foreground [MusicPlaybackService].
  *
- * Steps:
- *   1. Build the canonical watch URL from the video id.
- *   2. Look up a local cached download (`TrackEntity.localPath`). If present, play
- *      the file directly — Metrolist parity: downloaded tracks play offline and
- *      skip NewPipe entirely.
- *   3. Otherwise resolve via NewPipe → best M4A audio stream.
- *   4. Upsert the `TrackEntity` (so it shows up in Library → Cached / Recent) and
- *      set it on the global [MusicController].
+ * Offline-first: if a [TrackEntity.localPath] exists for the song, we play the
+ * cached file directly (Metrolist parity) and skip NewPipe entirely.
  *
- * Called from the Library playlist screen, home-feed song cards, and anywhere
- * else we need "play this YT Music videoId right now".
+ * All `MediaController` interactions are dispatched to the Main thread because
+ * Media3 requires it (silent no-op otherwise).
  */
 object YtPlayback {
 
-    private fun watchUrl(videoId: String) = "https://music.youtube.com/watch?v=$videoId"
+    fun watchUrl(videoId: String) = "https://music.youtube.com/watch?v=$videoId"
 
-    suspend fun playSong(context: Context, song: YtmSong) {
+    /**
+     * Resolve a playable URI for [song] — prefers the downloaded local file when
+     * present, otherwise resolves an HTTPS audio stream via NewPipe. Also
+     * upserts the corresponding [TrackEntity] so the Library tab stays in sync.
+     *
+     * Must be called off the Main thread.
+     */
+    private suspend fun resolvePlayable(
+        context: Context,
+        song: YtmSong,
+        bumpPlayCount: Boolean,
+    ): Pair<MediaItem, TrackEntity?> = withContext(Dispatchers.IO) {
         val url = watchUrl(song.videoId)
         val dao = LibraryDb.get(context).tracks()
-        // Prefer downloaded cache for offline playback.
-        val cached = withContext(Dispatchers.IO) { dao.byUrl(url) }
+        val cached = dao.byUrl(url)
         val playableUri: String = cached?.localPath?.takeIf { java.io.File(it).exists() }
-            ?: withContext(Dispatchers.IO) { NewPipeRepository.resolveAudioStream(url) }
+            ?: NewPipeRepository.resolveAudioStream(url)
 
-        // Persist/refresh the Library entry so Liked / Downloaded / Cached tiles stay
-        // in sync and the global MiniPlayer has a thumbnail & duration to show.
-        withContext(Dispatchers.IO) {
-            dao.upsert(
-                TrackEntity(
-                    url = url,
-                    title = song.title,
-                    artist = song.artist,
-                    durationSec = song.durationSeconds ?: cached?.durationSec ?: 0L,
-                    thumbnail = song.thumbnail ?: cached?.thumbnail,
-                    likedAt = cached?.likedAt,
-                    lastPlayed = System.currentTimeMillis(),
-                    playCount = (cached?.playCount ?: 0) + 1,
-                    localPath = cached?.localPath,
-                ),
+        val refreshed = TrackEntity(
+            url = url,
+            title = song.title,
+            artist = song.artist,
+            durationSec = song.durationSeconds ?: cached?.durationSec ?: 0L,
+            thumbnail = song.thumbnail ?: cached?.thumbnail,
+            likedAt = cached?.likedAt,
+            lastPlayed = if (bumpPlayCount) System.currentTimeMillis() else cached?.lastPlayed,
+            playCount = if (bumpPlayCount) (cached?.playCount ?: 0) + 1 else (cached?.playCount ?: 0),
+            localPath = cached?.localPath,
+        )
+        dao.upsert(refreshed)
+
+        val item = MediaItem.Builder()
+            .setMediaId(url)
+            .setUri(playableUri)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(song.title)
+                    .setArtist(song.artist)
+                    .setArtworkUri(song.thumbnail?.let(Uri::parse))
+                    .build(),
             )
-        }
+            .build()
+        item to refreshed
+    }
 
-        // Hand off to the global controller — `MediaController` methods must run on
-        // the main thread, so switch before touching setMediaItem/prepare/play.
-        // (Bug fix: previously we were on Dispatchers.IO here, which silently failed.)
+    /** Replace current playback with [song]. */
+    suspend fun playSong(context: Context, song: YtmSong) {
+        val (item, _) = resolvePlayable(context, song, bumpPlayCount = true)
         withContext(Dispatchers.Main) {
             val controller = MusicController.get(context.applicationContext)
-            val item = MediaItem.Builder()
-                .setUri(playableUri)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(song.title)
-                        .setArtist(song.artist)
-                        .setArtworkUri(song.thumbnail?.let(Uri::parse))
-                        .build(),
-                )
-                .build()
             controller.setMediaItem(item)
             controller.prepare()
             controller.play()
         }
     }
 
+    /** Insert [song] right after the currently-playing track. */
+    suspend fun playNext(context: Context, song: YtmSong) {
+        val (item, _) = resolvePlayable(context, song, bumpPlayCount = false)
+        withContext(Dispatchers.Main) {
+            val controller = MusicController.get(context.applicationContext)
+            if (controller.mediaItemCount == 0) {
+                controller.setMediaItem(item)
+                controller.prepare()
+                controller.play()
+            } else {
+                val insertAt = (controller.currentMediaItemIndex + 1)
+                    .coerceIn(0, controller.mediaItemCount)
+                controller.addMediaItem(insertAt, item)
+            }
+        }
+    }
+
+    /** Append [song] to the end of the playback queue. */
+    suspend fun addToQueue(context: Context, song: YtmSong) {
+        val (item, _) = resolvePlayable(context, song, bumpPlayCount = false)
+        withContext(Dispatchers.Main) {
+            val controller = MusicController.get(context.applicationContext)
+            if (controller.mediaItemCount == 0) {
+                controller.setMediaItem(item)
+                controller.prepare()
+                controller.play()
+            } else {
+                controller.addMediaItem(item)
+            }
+        }
+    }
+
     /**
-     * Queue a full playlist into the player. First song plays immediately, the rest
-     * become the upcoming queue — matches Metrolist's "Play playlist" behaviour.
+     * Queue a full playlist into the player. The [startIndex] song plays
+     * immediately, the rest become the upcoming queue.
      */
     suspend fun playPlaylist(context: Context, songs: List<YtmSong>, startIndex: Int = 0) {
         if (songs.isEmpty()) return
-        val startSong = songs.getOrNull(startIndex) ?: songs.first()
-        // Simplest working version: play the first track, leave queue management to
-        // a later refactor. (Proper queue wiring needs setMediaItems + index.)
-        playSong(context, startSong)
+        // Kick off the start song synchronously (resolves its stream) so the
+        // user hears audio ASAP.
+        val safeStart = startIndex.coerceIn(0, songs.lastIndex)
+        playSong(context, songs[safeStart])
+        // Queue the remaining tracks behind it without blocking playback. We
+        // resolve each lazily; Media3 handles async prepare once it reaches them.
+        val queue = buildList {
+            addAll(songs.subList(safeStart + 1, songs.size))
+            addAll(songs.subList(0, safeStart))
+        }
+        if (queue.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            queue.forEach { s ->
+                runCatching {
+                    val (item, _) = resolvePlayable(context, s, bumpPlayCount = false)
+                    withContext(Dispatchers.Main) {
+                        MusicController.get(context.applicationContext).addMediaItem(item)
+                    }
+                }
+            }
+        }
     }
 
     /** Download a YT Music song — delegates to [MusicDownloader] with a watch URL. */
     suspend fun downloadSong(context: Context, song: YtmSong): java.io.File {
         val url = watchUrl(song.videoId)
-        // Upsert TrackEntity first so the downloader's `dao.setLocalPath(...)` has a
-        // row to update (otherwise the REPLACE conflict strategy recreates it with
-        // empty metadata when NewPipe finishes).
+        // Seed the TrackEntity so the downloader's `dao.setLocalPath(...)` has a
+        // row to update (otherwise REPLACE recreates it with empty metadata).
         LibraryDb.get(context).tracks().upsert(
             TrackEntity(
                 url = url,
@@ -107,6 +158,13 @@ object YtPlayback {
         )
         return com.aioweb.app.data.downloads.MusicDownloader.download(
             context, url, song.title,
+        )
+    }
+
+    /** Remove a previously-downloaded song from disk and clear `local_path`. */
+    suspend fun removeDownload(context: Context, song: YtmSong) {
+        com.aioweb.app.data.downloads.MusicDownloader.delete(
+            context, watchUrl(song.videoId),
         )
     }
 

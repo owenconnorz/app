@@ -1,23 +1,31 @@
 package com.aioweb.app.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -25,7 +33,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.aioweb.app.data.ServiceLocator
-import com.aioweb.app.data.downloads.MusicDownloader
 import com.aioweb.app.data.ytmusic.YtMusicLibraryRepository
 import com.aioweb.app.data.ytmusic.YtPlayback
 import com.aioweb.app.data.ytmusic.YtmSong
@@ -34,11 +41,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * YouTube Music playlist detail — Metrolist parity: hero row, Play / Shuffle actions,
- * per-row download icon with progress + downloaded states, offline-first playback.
+ * YouTube Music playlist detail — Metrolist parity.
  *
- * Playback routes through [YtPlayback.playSong] → the global [MusicController], so
+ * Layout:
+ *   1. Hero header with large cover art (derived from the first track's artwork
+ *      if the playlist doesn't have its own) + title + track count + Play /
+ *      Shuffle buttons.
+ *   2. Track list where each row exposes a 3-dot menu with Play, Play next,
+ *      Add to queue, Download / Remove download, Share.
+ *
+ * Playback routes through [YtPlayback] → the global [MusicController], so
  * starting a song here immediately drives the app-wide MiniPlayer on every tab.
+ * Downloaded tracks (TrackEntity.localPath != null) are played from the cached
+ * M4A file — no network needed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,13 +70,14 @@ fun YtPlaylistScreen(
     var error by remember(playlistId) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    // Per-URL download progress (0f..1f). Null = not downloading. Collected from the
-    // MusicDownloader singleton so we can render the in-progress ring next to each row.
-    val downloadProgress by MusicDownloader.progressFlow
+    val downloadProgress by com.aioweb.app.data.downloads.MusicDownloader.progressFlow
         .collectAsState(initial = emptyMap())
 
     LaunchedEffect(playlistId, cookie) {
-        if (cookie.isBlank()) { error = "Not signed in."; return@LaunchedEffect }
+        if (cookie.isBlank()) {
+            error = "Not signed in."
+            return@LaunchedEffect
+        }
         error = null
         tracks = withContext(Dispatchers.IO) {
             runCatching { YtMusicLibraryRepository.playlistTracks(cookie, playlistId) }
@@ -72,12 +88,11 @@ fun YtPlaylistScreen(
         }
     }
 
-    fun playSongHandoff(s: YtmSong) {
-        // Call the caller-supplied hook for telemetry/analytics, THEN run the
-        // actual playback. Keeps the `onPlay` contract stable for any other caller.
+    fun playSongHandoff(list: List<YtmSong>, index: Int) {
+        val s = list.getOrNull(index) ?: return
         onPlay(s)
         scope.launch {
-            runCatching { YtPlayback.playSong(context, s) }
+            runCatching { YtPlayback.playPlaylist(context, list, index) }
         }
     }
 
@@ -93,22 +108,21 @@ fun YtPlaylistScreen(
                 actions = {
                     val list = tracks
                     if (!list.isNullOrEmpty()) {
-                        IconButton(onClick = {
-                            scope.launch {
-                                // "Download all" — walk the list and kick off a
-                                // download per track. MusicDownloader guards against
-                                // re-downloading files that already exist.
-                                list.forEach { s ->
-                                    runCatching { YtPlayback.downloadSong(context, s) }
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    list.forEach { s ->
+                                        runCatching { YtPlayback.downloadSong(context, s) }
+                                    }
                                 }
-                            }
-                        }) {
-                            Icon(Icons.Default.CloudDownload, "Download playlist")
+                            },
+                        ) {
+                            Icon(Icons.Default.CloudDownload, "Download all")
                         }
                     }
                 },
             )
-        }
+        },
     ) { padding ->
         val list = tracks
         when {
@@ -129,41 +143,114 @@ fun YtPlaylistScreen(
 
             list != null -> LazyColumn(Modifier.fillMaxSize().padding(padding)) {
                 item {
-                    Row(
-                        Modifier.fillMaxWidth().padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Button(
-                            onClick = { list.firstOrNull()?.let(::playSongHandoff) },
-                            enabled = list.isNotEmpty(),
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Icon(Icons.Default.PlayArrow, null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("Play")
-                        }
-                        OutlinedButton(
-                            onClick = { list.randomOrNull()?.let(::playSongHandoff) },
-                            enabled = list.isNotEmpty(),
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Icon(Icons.Default.Shuffle, null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("Shuffle")
-                        }
-                    }
-                }
-                items(list, key = { "pt_${it.videoId}" }) { s ->
-                    PlaylistTrackRow(
-                        song = s,
-                        isDownloading = downloadProgress["https://music.youtube.com/watch?v=${s.videoId}"],
-                        onPlay = { playSongHandoff(s) },
-                        onDownload = {
-                            scope.launch { runCatching { YtPlayback.downloadSong(context, s) } }
+                    PlaylistHero(
+                        title = title,
+                        coverArt = list.firstOrNull()?.thumbnail,
+                        trackCount = list.size,
+                        onPlay = { playSongHandoff(list, 0) },
+                        onShuffle = {
+                            val shuffled = list.shuffled()
+                            scope.launch {
+                                runCatching { YtPlayback.playPlaylist(context, shuffled, 0) }
+                            }
                         },
                     )
                 }
-                item { Spacer(Modifier.height(40.dp)) }
+                itemsIndexed(
+                    list,
+                    key = { idx, s -> "pt_${s.videoId}_$idx" },
+                ) { index, s ->
+                    PlaylistTrackRow(
+                        song = s,
+                        downloadFraction = downloadProgress[YtPlayback.watchUrl(s.videoId)],
+                        onClick = { playSongHandoff(list, index) },
+                    )
+                }
+                item { Spacer(Modifier.height(80.dp)) }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun PlaylistHero(
+    title: String,
+    coverArt: String?,
+    trackCount: Int,
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(220.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.secondaryContainer,
+                        ),
+                    ),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (coverArt != null) {
+                AsyncImage(
+                    model = coverArt,
+                    contentDescription = title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(
+                    Icons.AutoMirrored.Filled.PlaylistPlay,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(64.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "$trackCount songs",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(16.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Button(
+                onClick = onPlay,
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Default.PlayArrow, null)
+                Spacer(Modifier.width(6.dp))
+                Text("Play")
+            }
+            OutlinedButton(
+                onClick = onShuffle,
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Default.Shuffle, null)
+                Spacer(Modifier.width(6.dp))
+                Text("Shuffle")
             }
         }
     }
@@ -172,24 +259,26 @@ fun YtPlaylistScreen(
 @Composable
 private fun PlaylistTrackRow(
     song: YtmSong,
-    isDownloading: Float?,
-    onPlay: () -> Unit,
-    onDownload: () -> Unit,
+    downloadFraction: Float?,
+    onClick: () -> Unit,
 ) {
     val context = LocalContext.current
-    // Snapshot "is this song downloaded" reactively — poll on recomposition so the
-    // icon flips to `DownloadDone` the moment the file lands.
+    val scope = rememberCoroutineScope()
+    var menuOpen by remember { mutableStateOf(false) }
+
+    // Reactively track "is this song downloaded" — flips to DownloadDone as soon
+    // as the file lands on disk.
     var downloaded by remember(song.videoId) {
         mutableStateOf(YtPlayback.isDownloaded(context, song))
     }
-    LaunchedEffect(song.videoId, isDownloading) {
-        // Re-check after the progress flow drops to null (= download finished/aborted).
-        if (isDownloading == null) downloaded = YtPlayback.isDownloaded(context, song)
+    LaunchedEffect(song.videoId, downloadFraction) {
+        if (downloadFraction == null) downloaded = YtPlayback.isDownloaded(context, song)
     }
+
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onPlay)
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -198,22 +287,35 @@ private fun PlaylistTrackRow(
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .size(56.dp)
+                .size(52.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(
-                song.title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (downloaded) {
+                    Icon(
+                        Icons.Default.DownloadDone,
+                        contentDescription = "Downloaded",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(
+                    song.title,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             val sub = buildString {
                 append(song.artist)
-                if (!song.album.isNullOrBlank()) { append(" · "); append(song.album) }
+                if (!song.album.isNullOrBlank()) {
+                    append(" · "); append(song.album)
+                }
             }
             Text(
                 sub,
@@ -223,31 +325,102 @@ private fun PlaylistTrackRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        // Download state: in-progress ring ▸ downloaded check ▸ download icon.
-        when {
-            isDownloading != null -> Box(
+        // In-progress download ring takes priority over the 3-dot menu.
+        if (downloadFraction != null) {
+            Box(
                 Modifier.size(40.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator(
-                    progress = isDownloading.coerceIn(0f, 1f),
+                    progress = downloadFraction.coerceIn(0f, 1f),
                     strokeWidth = 2.dp,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(22.dp),
                 )
             }
-            downloaded -> IconButton(onClick = {}) {
-                Icon(
-                    Icons.Default.DownloadDone,
-                    contentDescription = "Downloaded",
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
-            else -> IconButton(onClick = onDownload) {
-                Icon(
-                    Icons.Default.Download,
-                    contentDescription = "Download",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        } else {
+            Box {
+                IconButton(onClick = { menuOpen = true }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "More options",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Play") },
+                        leadingIcon = { Icon(Icons.Default.PlayArrow, null) },
+                        onClick = {
+                            menuOpen = false
+                            onClick()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Play next") },
+                        leadingIcon = { Icon(Icons.Default.SkipNext, null) },
+                        onClick = {
+                            menuOpen = false
+                            scope.launch {
+                                runCatching { YtPlayback.playNext(context, song) }
+                            }
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Add to queue") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
+                        onClick = {
+                            menuOpen = false
+                            scope.launch {
+                                runCatching { YtPlayback.addToQueue(context, song) }
+                            }
+                        },
+                    )
+                    if (downloaded) {
+                        DropdownMenuItem(
+                            text = { Text("Remove download") },
+                            leadingIcon = { Icon(Icons.Default.Delete, null) },
+                            onClick = {
+                                menuOpen = false
+                                scope.launch {
+                                    runCatching { YtPlayback.removeDownload(context, song) }
+                                    downloaded = false
+                                }
+                            },
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = { Text("Download") },
+                            leadingIcon = { Icon(Icons.Default.Download, null) },
+                            onClick = {
+                                menuOpen = false
+                                scope.launch {
+                                    runCatching { YtPlayback.downloadSong(context, song) }
+                                }
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Share") },
+                        leadingIcon = { Icon(Icons.Default.Share, null) },
+                        onClick = {
+                            menuOpen = false
+                            val url = YtPlayback.watchUrl(song.videoId)
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, song.title)
+                                putExtra(Intent.EXTRA_TEXT, "${song.title} — ${song.artist}\n$url")
+                            }
+                            context.startActivity(
+                                Intent.createChooser(intent, "Share song").apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                },
+                            )
+                        },
+                    )
+                }
             }
         }
     }

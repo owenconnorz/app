@@ -94,6 +94,16 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
 - **(NEW)** Player now **forces landscape orientation** (`ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE`) while on screen, restored on dispose.
 - **(NEW)** Fixed crash when tapping the in-player **Sources** button — defensive `distinctBy { it.id }` to dedupe colliding Stremio/Nuvio source ids that were violating Compose `LazyColumn(items, key={...})` uniqueness.
 - **(NEW)** Cleaned up the awkward `{ -> ... }` empty-arg lambda in `PlayerToolbarPill(onSourcesClick = ...)` to a standard `() -> Unit` closure.
+- **(NEW — Metrolist playlist parity, Feb 2026)** Redesigned `YtPlaylistScreen.kt`:
+  - Large 220dp hero cover art (first track's artwork) with gradient fallback, title, track count, Play + Shuffle buttons.
+  - Replaced per-row play/download buttons with a **3-dot menu** (Play / Play next / Add to queue / Download / Remove download / Share).
+  - In-progress download ring still shown inline when a download is mid-flight.
+  - Downloaded badge (`DownloadDone` icon) inline with the title.
+- **(NEW — Feb 2026)** `YtPlayback.kt`:
+  - Extracted `resolvePlayable()` that returns a ready-to-play `MediaItem` and upserts the Room `TrackEntity`. Offline-first: uses `TrackEntity.localPath` when the file exists, else resolves via NewPipe.
+  - Added `playNext()` / `addToQueue()` which thread-hop to Main before calling `MediaController.addMediaItem()`.
+  - `playPlaylist()` now actually builds a queue (first plays immediately, rest are appended on IO).
+  - Added `removeDownload()` as the counterpart to `downloadSong()`.
 
 ## Backlog / next iterations
 - **P1** Picture-in-Picture (PiP) for the player
