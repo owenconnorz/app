@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # Maintain dependencies for Gradle (Kotlin's primary build tool)
+  - package-ecosystem: "gradle"
+    # Look for the build.gradle.kts or build.gradle file in the root directory
+    directory: "/"
+    # Check for updates once a week
+    schedule:
+      interval: "daily"
+    # Limit the number of open pull requests so your team isn't overwhelmed
+    open-pull-requests-limit: 10
+    # Optional: Automatically assign reviewers to the PRs
+    # reviewers:
+    #   - "your-github-username"
+
+  # Optional: Keep your GitHub Actions up to date as well
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
