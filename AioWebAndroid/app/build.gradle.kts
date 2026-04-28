@@ -1,8 +1,8 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android") version "1.9.24"
-    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.24"
-    id("com.google.devtools.ksp") version "1.9.24-1.0.20"
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -49,14 +49,14 @@ android {
 
 dependencies {
 
-    // Kotlin stdlib (must match plugin)
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.24")
+    // Kotlin stdlib (matches plugin 1.9.22)
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
 
-    // Coroutines (compatible with Kotlin 1.9.24)
+    // Coroutines compatible with Kotlin 1.9.x
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // Compose BOM (compatible with Kotlin 1.9.24 + compiler 1.5.14)
+    // Compose BOM compatible with Kotlin 1.9.x + compiler 1.5.14
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
