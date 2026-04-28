@@ -110,6 +110,10 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
   - Horizontal chip row (Integration → CloudStream Plugins, Account → YT Music login, AI → provider defaults).
   - Grouped sections (USER INTERFACE / PLAYER & CONTENT / PRIVACY & SECURITY / STORAGE & DATA / SYSTEM & ABOUT) with tinted-icon hub rows that expand inline.
   - About dialog with GitHub source + bug report links.
+- **(NEW — Downloads & Theme polish, Feb 2026)**
+  - **Parallel downloads** — `MusicDownloader` now uses a `Semaphore(3)` so up to 3 songs download concurrently (Metrolist parity).
+  - **System notifications** — `MusicDownloadNotifier` posts an ongoing progress notification per download (throttled to ~250ms updates) and a 4-second auto-dismiss "Downloaded" confirmation when complete. Uses the existing `POST_NOTIFICATIONS` permission already in the manifest.
+  - **Album-art-driven dynamic theme** — new `AlbumArtThemeBus` extracts the vibrant Palette swatch from the currently playing track's artwork (Coil → Bitmap → `Palette.from(...).vibrantSwatch ?? lightVibrantSwatch ?? dominantSwatch`). `AioWebTheme` now overlays this color as `MaterialTheme.colorScheme.primary`, so the play button / nav highlight / mini player / 3-dot menu accent the current track. Falls back to the house violet when nothing is playing.
 - **(NEW — Now-playing indicator + home click fix, Feb 2026)**
   - Added `audio/PlaybackBus.kt` — global StateFlow of `nowPlayingMediaId` + `isPlaying`, hooked into `MusicController` via a single `Player.Listener`. Attached once on app start in `AioWebApp.kt`.
   - Added `ui/components/PlayingBars.kt` — Metrolist's signature 3-bar animated equalizer. Each bar uses an independent `infiniteRepeatable` so it feels organic; freezes when paused.

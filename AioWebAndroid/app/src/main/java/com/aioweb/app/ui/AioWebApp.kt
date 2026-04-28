@@ -76,6 +76,9 @@ fun AioWebApp() {
     // foreground media service propagates to PlaybackBus.nowPlayingMediaId.
     LaunchedEffect(Unit) {
         runCatching { com.aioweb.app.audio.PlaybackBus.ensureAttached(context) }
+        // Hook the album-art-driven accent color so the theme follows the
+        // currently playing track's artwork (Metrolist / SimpMusic parity).
+        runCatching { com.aioweb.app.ui.theme.AlbumArtThemeBus.attach(context) }
     }
 
     val tabs = remember(nsfwEnabled, navOrderCsv) {

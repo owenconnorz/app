@@ -81,14 +81,22 @@ fun AioWebTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val sl = remember { ServiceLocator.get(context) }
     val dynamicEnabled by sl.settings.dynamicColor.collectAsState(initial = false)
+    val albumArtAccent by AlbumArtThemeBus.accent.collectAsState()
 
     val supportsDynamic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val colors = if (dynamicEnabled && supportsDynamic) {
+    val baseColors = if (dynamicEnabled && supportsDynamic) {
         // Monet dynamic dark scheme — pulled from system wallpaper / accent.
         dynamicDarkColorScheme(context)
     } else {
         AioColors
     }
+    // Always overlay the currently-playing track's vibrant swatch as the
+    // accent. Falls back to AlbumArtThemeBus.DEFAULT when nothing is playing,
+    // so static screens still show the app's house violet.
+    val colors = baseColors.copy(
+        primary = albumArtAccent,
+        primaryContainer = albumArtAccent.copy(alpha = 0.32f),
+    )
 
     val view = LocalView.current
     if (!view.isInEditMode) {
