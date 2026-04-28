@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.23"
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -40,7 +40,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.11"
+        kotlinCompilerExtensionVersion = "1.5.10"
     }
 }
 
@@ -60,30 +60,30 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    // ViewModel + coroutines (fixes viewModelScope)
+    // ViewModel + coroutines
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 
-    // Coil (fixes AsyncImage, ImageRequest, ImageLoader)
+    // Coil
     implementation("io.coil-kt:coil-compose:2.6.0")
 
-    // OkHttp (fixes okhttp3 references)
+    // OkHttp
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // Jsoup (fixes Document, Jsoup references)
+    // Jsoup
     implementation("org.jsoup:jsoup:1.17.2")
 
-    // kotlinx.serialization (fixes serialization references)
+    // kotlinx.serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
-    // Jackson (fixes ObjectMapper in MainActivity)
+    // Jackson
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
 
-    // Media3 (fixes media3, Player references)
+    // Media3
     implementation("androidx.media3:media3-exoplayer:1.3.1")
     implementation("androidx.media3:media3-ui:1.3.1")
     implementation("androidx.media3:media3-common:1.3.1")
 
-    // Palette (fixes AlbumArtThemeBus)
+    // Palette
     implementation("androidx.palette:palette-ktx:1.0.0")
 }
