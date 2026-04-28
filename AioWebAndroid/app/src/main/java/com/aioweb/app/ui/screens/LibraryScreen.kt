@@ -601,7 +601,6 @@ private fun YtSongRow(s: YtmSong, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -612,10 +611,11 @@ private fun YtSongRow(s: YtmSong, onClick: () -> Unit) {
             modifier = Modifier
                 .size(52.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable(onClick = onClick),
         )
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).clickable(onClick = onClick)) {
             Text(
                 s.title,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -631,6 +631,7 @@ private fun YtSongRow(s: YtmSong, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        com.aioweb.app.ui.components.SongRowMenu(song = s, onPlay = onClick)
     }
 }
 
@@ -831,7 +832,6 @@ private fun YtSongsSection(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clickable { onSongClick(s) }
                     .padding(horizontal = 20.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -842,10 +842,11 @@ private fun YtSongsSection(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { onSongClick(s) },
                 )
                 Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f).clickable { onSongClick(s) }) {
                     Text(
                         s.title,
                         color = MaterialTheme.colorScheme.onBackground,
@@ -858,6 +859,7 @@ private fun YtSongsSection(
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
+                com.aioweb.app.ui.components.SongRowMenu(song = s, onPlay = { onSongClick(s) })
             }
         }
         if (songs.size > 5) {

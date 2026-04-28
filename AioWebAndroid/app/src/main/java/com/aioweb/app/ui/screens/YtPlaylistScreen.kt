@@ -263,8 +263,6 @@ private fun PlaylistTrackRow(
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var menuOpen by remember { mutableStateOf(false) }
 
     // Reactively track "is this song downloaded" — flips to DownloadDone as soon
     // as the file lands on disk.
@@ -338,90 +336,7 @@ private fun PlaylistTrackRow(
                 )
             }
         } else {
-            Box {
-                IconButton(onClick = { menuOpen = true }) {
-                    Icon(
-                        Icons.Default.MoreVert,
-                        contentDescription = "More options",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                DropdownMenu(
-                    expanded = menuOpen,
-                    onDismissRequest = { menuOpen = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Play") },
-                        leadingIcon = { Icon(Icons.Default.PlayArrow, null) },
-                        onClick = {
-                            menuOpen = false
-                            onClick()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Play next") },
-                        leadingIcon = { Icon(Icons.Default.SkipNext, null) },
-                        onClick = {
-                            menuOpen = false
-                            scope.launch {
-                                runCatching { YtPlayback.playNext(context, song) }
-                            }
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Add to queue") },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null) },
-                        onClick = {
-                            menuOpen = false
-                            scope.launch {
-                                runCatching { YtPlayback.addToQueue(context, song) }
-                            }
-                        },
-                    )
-                    if (downloaded) {
-                        DropdownMenuItem(
-                            text = { Text("Remove download") },
-                            leadingIcon = { Icon(Icons.Default.Delete, null) },
-                            onClick = {
-                                menuOpen = false
-                                scope.launch {
-                                    runCatching { YtPlayback.removeDownload(context, song) }
-                                    downloaded = false
-                                }
-                            },
-                        )
-                    } else {
-                        DropdownMenuItem(
-                            text = { Text("Download") },
-                            leadingIcon = { Icon(Icons.Default.Download, null) },
-                            onClick = {
-                                menuOpen = false
-                                scope.launch {
-                                    runCatching { YtPlayback.downloadSong(context, song) }
-                                }
-                            },
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text("Share") },
-                        leadingIcon = { Icon(Icons.Default.Share, null) },
-                        onClick = {
-                            menuOpen = false
-                            val url = YtPlayback.watchUrl(song.videoId)
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, song.title)
-                                putExtra(Intent.EXTRA_TEXT, "${song.title} — ${song.artist}\n$url")
-                            }
-                            context.startActivity(
-                                Intent.createChooser(intent, "Share song").apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                },
-                            )
-                        },
-                    )
-                }
-            }
+            com.aioweb.app.ui.components.SongRowMenu(song = song, onPlay = onClick)
         }
     }
 }

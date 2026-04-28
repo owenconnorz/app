@@ -1045,15 +1045,13 @@ private fun YtHomePlaylistCard(
 private fun YtHomeSongCard(s: com.aioweb.app.data.ytmusic.YtmSong) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    Column(
-        Modifier
-            .width(150.dp)
-            .clickable {
-                scope.launch {
-                    runCatching { com.aioweb.app.data.ytmusic.YtPlayback.playSong(context, s) }
-                }
-            },
-    ) {
+    val onPlay = {
+        scope.launch {
+            runCatching { com.aioweb.app.data.ytmusic.YtPlayback.playSong(context, s) }
+        }
+        Unit
+    }
+    Column(Modifier.width(150.dp)) {
         AsyncImage(
             model = s.thumbnail,
             contentDescription = s.title,
@@ -1061,23 +1059,29 @@ private fun YtHomeSongCard(s: com.aioweb.app.data.ytmusic.YtmSong) {
             modifier = Modifier
                 .size(150.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable { onPlay() },
         )
         Spacer(Modifier.height(6.dp))
-        Text(
-            s.title,
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            s.artist,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).clickable { onPlay() }) {
+                Text(
+                    s.title,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    s.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            com.aioweb.app.ui.components.SongRowMenu(song = s, onPlay = { onPlay() })
+        }
     }
 }
 

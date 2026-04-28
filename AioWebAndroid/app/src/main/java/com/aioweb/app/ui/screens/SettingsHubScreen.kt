@@ -19,9 +19,11 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MusicNote
@@ -38,6 +41,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Reorder
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Storage
@@ -225,6 +229,18 @@ fun SettingsHubScreen(onOpenPlugins: () -> Unit) {
                 label = "AI",
                 tint = Color(0xFFFFD479),
                 onClick = { toggle("ai-defaults") },
+            )
+            ChipTile(
+                icon = Icons.Default.Chat,
+                label = "Discord",
+                tint = Color(0xFF7289DA),
+                onClick = {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://discord.gg/")).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        },
+                    )
+                },
             )
         }
         AnimatedVisibility(visible = "account" in expanded) {
@@ -525,11 +541,64 @@ fun SettingsHubScreen(onOpenPlugins: () -> Unit) {
                     )
                 }
             }
+            Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            HubRow(
+                icon = Icons.Default.CloudUpload,
+                tint = Color(0xFFB49BFF),
+                title = "Backup and restore",
+                subtitle = "Export / import your library, playlists and settings",
+                chevron = true,
+                expanded = false,
+                onClick = {
+                    // Stub — actual backup pipeline is P2. Surface a toast-style info.
+                    android.widget.Toast.makeText(
+                        context,
+                        "Backup & restore is coming soon",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                },
+            )
         }
 
         // ---- SYSTEM & ABOUT ---------------------------------------------
         GroupHeader("System & about")
         SettingsCard {
+            HubRow(
+                icon = Icons.Default.Link,
+                tint = Color(0xFF5B8DEF),
+                title = "Open supported links",
+                subtitle = "Open supported link by default",
+                chevron = true,
+                expanded = false,
+                onClick = {
+                    runCatching {
+                        val intent = Intent(
+                            android.provider.Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS,
+                        ).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    }
+                },
+            )
+            Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            HubRow(
+                icon = Icons.Default.Science,
+                tint = Color(0xFFB49BFF),
+                title = "Experimental Settings",
+                subtitle = "Misc",
+                chevron = true,
+                expanded = false,
+                onClick = {
+                    android.widget.Toast.makeText(
+                        context,
+                        "No experimental flags yet",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                },
+            )
+            Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
             UpdaterRow()
             Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
             HubRow(
