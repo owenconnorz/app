@@ -84,8 +84,15 @@ object YtPlayback {
         item to cached
     }
 
-    /** Replace current playback with [song]. */
-    suspend fun playSong(context: Context, song: YtmSong) {
+    /**
+     * Replace current playback with [song].
+     *
+     * @param withAutoRadio when true (default) we follow up with a Metrolist-
+     *  style auto-radio (~20 related tracks) so skip/prev have somewhere to
+     *  go. Pass `false` from playlist context — the playlist's own remaining
+     *  tracks form the queue and we don't want random radio interleaved.
+     */
+    suspend fun playSong(context: Context, song: YtmSong, withAutoRadio: Boolean = true) {
         val (item, _) = resolvePlayable(context, song, bumpPlayCount = true)
         withContext(Dispatchers.Main) {
             val controller = MusicController.get(context.applicationContext)
@@ -93,10 +100,7 @@ object YtPlayback {
             controller.prepare()
             controller.play()
         }
-        // Fire-and-forget: pull the YT Music auto-radio for this song and
-        // append it to the queue so skip/previous (UI + system notification)
-        // always have somewhere to go. Endless playback parity with Metrolist.
-        startAutoRadio(context, song)
+        if (withAutoRadio) startAutoRadio(context, song)
     }
 
     /**
@@ -168,9 +172,10 @@ object YtPlayback {
     suspend fun playPlaylist(context: Context, songs: List<YtmSong>, startIndex: Int = 0) {
         if (songs.isEmpty()) return
         // Kick off the start song synchronously (resolves its stream) so the
-        // user hears audio ASAP.
+        // user hears audio ASAP. Skip the auto-radio — the playlist's OWN
+        // remaining tracks fill the queue.
         val safeStart = startIndex.coerceIn(0, songs.lastIndex)
-        playSong(context, songs[safeStart])
+        playSong(context, songs[safeStart], withAutoRadio = false)
         // Queue the remaining tracks behind it without blocking playback. We
         // resolve each lazily; Media3 handles async prepare once it reaches them.
         val queue = buildList {

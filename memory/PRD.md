@@ -110,6 +110,9 @@ Android (Kotlin Compose) ──→ TMDB           (movies)
   - Horizontal chip row (Integration → CloudStream Plugins, Account → YT Music login, AI → provider defaults).
   - Grouped sections (USER INTERFACE / PLAYER & CONTENT / PRIVACY & SECURITY / STORAGE & DATA / SYSTEM & ABOUT) with tinted-icon hub rows that expand inline.
   - About dialog with GitHub source + bug report links.
+- **(NEW — Playlist queue purity, Feb 2026)**
+  - **Bug**: skipping past the first song in a playlist played random unrelated tracks. Root cause: `playPlaylist(...)` called `playSong(...)` which always triggered the Metrolist-style auto-radio (20 random YouTube Music recommendations). The radio batch landed in the queue **before** the playlist's own remaining tracks were appended, producing the weird `[seedSong, 20 randoms, rest of playlist]` interleave.
+  - **Fix**: added `withAutoRadio: Boolean = true` parameter to `playSong()`. `playPlaylist()` now passes `false` — single-song taps from the home feed / search still get auto-radio (so skip/prev keep working there), but playlist context only ever queues the playlist's own songs.
 - **(NEW — Endless scroll across the music UX, Feb 2026)**
   - Extracted a private `drainBrowse(...)` helper in `YtMusicLibraryRepository` that follows `nextContinuationData.continuation` tokens until exhausted (capped at 50 pages). Applied to **all four** library fetchers: liked playlists, liked albums, liked songs (`VLLM`), and library artists. Previously each was capped at the first 50–100 entries.
   - **Music home feed** (`YtMusicHomeRepository.load`) now also drains 12 pages of carousel-shelf continuations — so the home feed extends as the user scrolls instead of stopping at the first batch.
