@@ -2,7 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization") version "1.9.22"
-    id("com.google.devtools.ksp") version "1.9.22-1.0.17"
+    id("com.google.devtools.ksp") version "1.9.22-1.0.17")
 }
 
 android {
@@ -115,11 +115,11 @@ dependencies {
     // Palette
     implementation("androidx.palette:palette-ktx:1.0.0")
 
-    // NewPipe Extractor
+    // NewPipe Extractor (requires JitPack)
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.1")
 
-    // QuickJS (correct Maven Central artifact)
-    implementation("io.github.dokar3:quickjs-kt-android:0.9.2")
+    // ⭐ NEW WORKING QUICKJS (replaces dead JitPack version)
+    implementation("app.cash.quickjs:quickjs-android:0.9.2")
 
     // NanoHTTPD
     implementation("org.nanohttpd:nanohttpd:2.3.1")
