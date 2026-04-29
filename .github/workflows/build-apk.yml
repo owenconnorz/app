@@ -4,7 +4,7 @@ on:
 
 defaults:
   run:
-    working-directory: AioWebAndroid   # ⭐ REQUIRED so ./gradlew exists
+    working-directory: AioWebAndroid   # required so ./gradlew exists
 
 jobs:
   build:
@@ -45,9 +45,7 @@ jobs:
       - name: Resolve ffmpeg libs
         run: git clone https://github.com/mikooomich/ffmpeg-android-maker-prebuilt/ -b audio ../ffMetadataEx/ffmpeg-android-maker
 
-      - name: Build core release APK
-        run: ./gradlew assembleCoreRelease
-
+      # ⭐ FULL RELEASE ONLY — this is the correct task
       - name: Build full release APK
         run: ./gradlew assembleFullRelease
 
@@ -58,7 +56,6 @@ jobs:
           name: "Build ${{ env.date_tag }}"
           draft: true
           files: |
-            app/build/outputs/apk/core/release/*.apk
             app/build/outputs/apk/full/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.REL_TOKEN }}
