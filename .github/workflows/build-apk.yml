@@ -42,7 +42,7 @@ jobs:
         run: ./gradlew assembleRelease --stacktrace
 
       - name: Upload Release APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: AioWebAndroid-release
           path: app/build/outputs/apk/release/*.apk
