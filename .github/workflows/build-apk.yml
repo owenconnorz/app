@@ -87,9 +87,4 @@ jobs:
           ls -la artifacts/ || true
 
       - name: Upload APK Artifacts
-        continue-on-error: true   # ⭐ EVEN IF NO ARTIFACTS, STILL SUCCESS
-        uses: actions/upload-artifact@v7
-        with:
-          name: StreamCloud-apks
-          path: AioWebAndroid/artifacts/*.apk
-          retention-days: 30
+        continue-on-error: true   # ⭐ EVEN
