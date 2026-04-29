@@ -2,6 +2,10 @@ name: Build APKs for release
 on:
   workflow_dispatch:
 
+defaults:
+  run:
+    working-directory: AioWebAndroid   # ⭐ REQUIRED so ./gradlew exists
+
 jobs:
   build:
     runs-on: ubuntu-latest
