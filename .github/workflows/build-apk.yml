@@ -1,73 +1,60 @@
-name: Build AioWeb Android APK
-
+name: Build APKs for release
 on:
-  push:
-    branches: [ main, master ]
-    paths:
-      - 'AioWebAndroid/**'
-      - '.github/workflows/build-apk.yml'
-  pull_request:
-    branches: [ main, master ]
-    paths:
-      - 'AioWebAndroid/**'
   workflow_dispatch:
-
-defaults:
-  run:
-    working-directory: AioWebAndroid
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    continue-on-error: true   # ⭐ JOB WILL NEVER FAIL
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
+      - uses: actions/checkout@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          fetch-depth: 0
+          submodules: recursive
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+      - name: set up JDK 21
+        uses: actions/setup-java@v4
         with:
-          gradle-version: wrapper
+          java-version: 21
+          distribution: "temurin"
+          cache: 'gradle'
 
-      - name: Cache Gradle
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('AioWebAndroid/**/*.gradle*', 'AioWebAndroid/**/gradle-wrapper.properties') }}
+      - name: Accept SDK licenses
+        run: yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      # ⭐ BUILD REMOVED — NO BUILDING ANYMORE
-      - name: Skip Build
-        run: echo "Skipping build — no APKs generated."
-
-      # ⭐ Collect APKs ONLY if they already exist in repo
-      - name: Collect APK artifacts
-        continue-on-error: true
+      - name: Setup signing configs
         run: |
-          mkdir -p artifacts
-          cp app/build/outputs/apk/debug/*.apk artifacts/ 2>/dev/null || true
-          cp app/build/outputs/apk/release/*.apk artifacts/ 2>/dev/null || true
-          ls -la artifacts/ || true
+          echo "$KEYSTORE" | base64 --decode > test.jks
+          echo "$KEYSTORE_PROPERTIES" > keystore.properties
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
 
-      # ⭐ FIXED UPLOAD PATH — uploads from correct folder
-      - name: Upload APK Artifacts
-        continue-on-error: true
-        uses: actions/upload-artifact@v7
+      - name: Get date-time string
+        id: datetime
+        run: |
+          DATE_TAG=$(date +'%Y-%m-%d_%H-%M-%S')
+          echo "date_tag=$DATE_TAG" >> $GITHUB_ENV
+
+      - name: Resolve ffMetadatEx
+        run: git clone https://github.com/OuterTune/ffMetadataEx -b vibebur-128 ../ffMetadataEx
+
+      - name: Resolve ffmpeg libs
+        run: git clone https://github.com/mikooomich/ffmpeg-android-maker-prebuilt/ -b audio ../ffMetadataEx/ffmpeg-android-maker
+
+      - name: Build core release APK
+        run: ./gradlew assembleCoreRelease
+
+      - name: Build full release APK
+        run: ./gradlew assembleFullRelease
+
+      - name: Create github release draft
+        uses: softprops/action-gh-release@v2
         with:
-          name: StreamCloud-apks
-          path: artifacts/*.apk
-          retention-days: 30
+          tag_name: build-${{ env.date_tag }}
+          name: "Build ${{ env.date_tag }}"
+          draft: true
+          files: |
+            app/build/outputs/apk/core/release/*.apk
+            app/build/outputs/apk/full/release/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.REL_TOKEN }}
