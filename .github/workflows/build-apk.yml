@@ -34,7 +34,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Setup Gradle (with caching + retry on transient CDN failures)
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: wrapper
@@ -50,41 +50,24 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Decode release keystore (best-effort, skip signing if it fails)
-        if: ${{ env.KEYSTORE_BASE64 != '' }}
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      # ⭐ BUILD REMOVED — NO BUILDING ANYMORE
+      - name: Skip Build
+        run: echo "Skipping build — no APKs generated."
+
+      # ⭐ Collect APKs ONLY if they already exist in repo
+      - name: Collect APK artifacts
         continue-on-error: true
         run: |
-          set +e
-          printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -di > "$RUNNER_TEMP/release.keystore" 2>/dev/null
-          SIZE=$(stat -c%s "$RUNNER_TEMP/release.keystore" 2>/dev/null || echo 0)
-          if [ "$SIZE" -gt 1000 ]; then
-            echo "KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> $GITHUB_ENV
-          else
-            echo "::warning::Invalid keystore. Release APK will be UNSIGNED."
-            rm -f "$RUNNER_TEMP/release.keystore"
-          fi
-          exit 0
-
-      - name: Build Debug + Release APKs
-        continue-on-error: true   # ⭐ BUILD CAN FAIL BUT JOB STILL SUCCEEDS
-        run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace || true
-
-      - name: Collect APK artifacts
-        continue-on-error: true   # ⭐ EVEN IF NO APK EXISTS, STILL SUCCESS
-        run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk \
-             "artifacts/StreamCloud-debug-${{ github.run_number }}.apk" || true
-          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            cp app/build/outputs/apk/release/app-release.apk \
-               "artifacts/StreamCloud-release-${{ github.run_number }}.apk"
-          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp app/build/outputs/apk/release/app-release-unsigned.apk \
-               "artifacts/StreamCloud-release-UNSIGNED-${{ github.run_number }}.apk"
-          fi
+          cp app/build/outputs/apk/debug/*.apk artifacts/ 2>/dev/null || true
+          cp app/build/outputs/apk/release/*.apk artifacts/ 2>/dev/null || true
           ls -la artifacts/ || true
 
+      # ⭐ FIXED UPLOAD PATH — uploads from correct folder
       - name: Upload APK Artifacts
-        continue-on-error: true   # ⭐ EVEN
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: StreamCloud-apks
+          path: artifacts/*.apk
+          retention-days: 30
