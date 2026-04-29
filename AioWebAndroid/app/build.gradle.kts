@@ -39,8 +39,8 @@ android {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
-    implementation("org.jsoup:jsoup:1.17.2")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
+    implementation("org.jsoup:jsoup:1.15.4")
 
-    // your existing dependencies go here
+    // Add your other dependencies here, but they MUST be Kotlin 1.9 compatible
 }
