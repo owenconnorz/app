@@ -22,7 +22,7 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: AioWebAndroid   # ⭐ IMPORTANT — your gradlew lives here
+        working-directory: AioWebAndroid
 
     steps:
       - name: Checkout repository
@@ -59,4 +59,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AioWebAndroid-release
-          path: app/build/outputs/apk/release/*.apk   # ⭐ Correct path for your project
+          path: app/build/outputs/apk/release/*.apk
