@@ -1,4 +1,4 @@
-Maybe replace it with a part of my old code that worked before name: Build AioWeb Android APK
+name: Build AioWeb Android APK
 
 on:
   push:
