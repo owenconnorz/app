@@ -1,5 +1,15 @@
-name: Build APKs for release
+name: Build AioWeb Android APK
+
 on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'AioWebAndroid/**'
+      - '.github/workflows/build-apk.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'AioWebAndroid/**'
   workflow_dispatch:
 
 defaults:
@@ -9,53 +19,75 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
         with:
-          fetch-depth: 0
-          submodules: recursive
+          java-version: '17'
+          distribution: 'temurin'
 
-      - name: set up JDK 21
-        uses: actions/setup-java@v4
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Setup Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v6
         with:
-          java-version: 21
-          distribution: "temurin"
-          cache: 'gradle'
+          gradle-version: wrapper
 
-      - name: Accept SDK licenses
-        run: yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+      - name: Cache Gradle
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('AioWebAndroid/**/*.gradle*', 'AioWebAndroid/**/gradle-wrapper.properties') }}
 
-      - name: Setup signing configs
-        run: |
-          echo "$KEYSTORE" | base64 --decode > test.jks
-          echo "$KEYSTORE_PROPERTIES" > keystore.properties
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # ---------- Decode the release keystore ----------
+      - name: Decode release keystore (best-effort)
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
         env:
-          KEYSTORE: ${{ secrets.KEYSTORE }}
-          KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
-
-      - name: Get date-time string
-        id: datetime
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        continue-on-error: true
         run: |
-          DATE_TAG=$(date +'%Y-%m-%d_%H-%M-%S')
-          echo "date_tag=$DATE_TAG" >> $GITHUB_ENV
+          set +e
+          printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -di > "$RUNNER_TEMP/release.keystore" 2>/dev/null
+          SIZE=$(stat -c%s "$RUNNER_TEMP/release.keystore" 2>/dev/null || echo 0)
+          if [ "$SIZE" -gt 1000 ]; then
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> $GITHUB_ENV
+          else
+            echo "::warning::Invalid keystore. Release APK will be UNSIGNED."
+            rm -f "$RUNNER_TEMP/release.keystore"
+          fi
+          exit 0
 
-      - name: Resolve ffMetadatEx
-        run: git clone https://github.com/OuterTune/ffMetadataEx -b vibebur-128 ../ffMetadataEx
+      - name: Build Debug + Release APKs
+        run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
 
-      - name: Resolve ffmpeg libs
-        run: git clone https://github.com/mikooomich/ffmpeg-android-maker-prebuilt/ -b audio ../ffMetadataEx/ffmpeg-android-maker
+      - name: Collect APK artifacts
+        run: |
+          mkdir -p artifacts
 
-      # ⭐ This is the correct task — always exists
-      - name: Build release APK
-        run: ./gradlew assembleRelease
+          # Debug
+          cp app/build/outputs/apk/debug/app-debug.apk \
+             "artifacts/AioWeb-debug-${{ github.run_number }}.apk" || true
 
-      - name: Create github release draft
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ env.date_tag }}
-          name: "Build ${{ env.date_tag }}"
-          draft: true
-          files: |
-            app/build/outputs/apk/release/*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.REL_TOKEN }}
+          # Release (signed or unsigned)
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk \
+               "artifacts/AioWeb-release-${{ github.run_number }}.apk"
+          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk \
+               "artifacts/AioWeb-release-UNSIGNED-${{ github.run_number }}.apk"
+          fi
+
+          ls -la artifacts/
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v7
