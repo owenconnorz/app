@@ -60,34 +60,4 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -di > "$RUNNER_TEMP/release.keystore" 2>/dev/null
           SIZE=$(stat -c%s "$RUNNER_TEMP/release.keystore" 2>/dev/null || echo 0)
           if [ "$SIZE" -gt 1000 ]; then
-            echo "KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> $GITHUB_ENV
-          else
-            echo "::warning::Invalid keystore. Release APK will be UNSIGNED."
-            rm -f "$RUNNER_TEMP/release.keystore"
-          fi
-          exit 0
-
-      - name: Build Debug + Release APKs
-        run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
-
-      - name: Collect APK artifacts
-        run: |
-          mkdir -p artifacts
-
-          # Debug
-          cp app/build/outputs/apk/debug/app-debug.apk \
-             "artifacts/AioWeb-debug-${{ github.run_number }}.apk" || true
-
-          # Release (signed or unsigned)
-          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            cp app/build/outputs/apk/release/app-release.apk \
-               "artifacts/AioWeb-release-${{ github.run_number }}.apk"
-          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp app/build/outputs/apk/release/app-release-unsigned.apk \
-               "artifacts/AioWeb-release-UNSIGNED-${{ github.run_number }}.apk"
-          fi
-
-          ls -la artifacts/
-
-      - name: Upload APK Artifacts
-        uses: actions/upload-artifact@v7
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/re
