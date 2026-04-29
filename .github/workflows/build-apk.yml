@@ -48,12 +48,6 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # ---------- Decode the release keystore from GitHub Secrets ----------
-      # Required secrets (Settings → Secrets and variables → Actions):
-      #   KEYSTORE_BASE64    – `base64 -w0 release.keystore`
-      #   KEYSTORE_PASSWORD  – store password
-      #   KEY_ALIAS          – key alias
-      #   KEY_PASSWORD       – key password
       - name: Decode release keystore (best-effort, skip signing if it fails)
         if: ${{ env.KEYSTORE_BASE64 != '' }}
         env:
@@ -64,7 +58,6 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -di > "$RUNNER_TEMP/release.keystore" 2>/dev/null
           SIZE=$(stat -c%s "$RUNNER_TEMP/release.keystore" 2>/dev/null || echo 0)
           if [ "$SIZE" -gt 1000 ]; then
-            echo "✅ Keystore decoded OK ($SIZE bytes)"
             echo "KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> $GITHUB_ENV
           else
             echo "::warning::KEYSTORE_BASE64 secret is invalid or truncated ($SIZE bytes after decode). Release APK will be UNSIGNED."
@@ -93,5 +86,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: StreamCloud-apks
-          path: AioWebAndroid/artifacts/*.apk
+          path: artifacts/*.apk     # ⭐ FIXED PATH
           retention-days: 30
