@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.PermissionChecker
 import com.aioweb.app.ui.AioWebApp
 import com.aioweb.app.ui.theme.AioWebTheme
+import com.lagradost.cloudstream3.installPrefs
 
 class MainActivity : ComponentActivity() {
 
@@ -22,6 +23,11 @@ class MainActivity : ComponentActivity() {
         setTheme(R.style.Theme_AioWeb)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // Initialize CloudStream plugin system — must happen early so plugins can access
+        // shared prefs and HTTP client when they're loaded
+        installPrefs(this)
+        
         // Android 13+ requires explicit POST_NOTIFICATIONS permission to surface the
         // media-session notification when music is playing.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
