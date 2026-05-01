@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.lagradost.nicehttp.Requests as NiceHttpRequests
 
 /**
  * Stub of cloudstream3's `MainActivity.kt` top-level surface.
@@ -27,13 +28,13 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 
 /** Shared HTTP client every plugin uses. */
 @get:JvmName("getAppProperty")
-val app: Requests = Requests
+val app: NiceHttpRequests = Requests
 
 /**
  * Explicit getApp() function — some plugins call this directly instead of using
  * the `app` property. This ensures both calling patterns work.
  */
-fun getApp(): Requests = Requests
+fun getApp(): NiceHttpRequests = Requests
 
 /** Shared Jackson mapper used by plugin `parsedSafe<...>()` extensions. */
 val mapper: ObjectMapper by lazy {
