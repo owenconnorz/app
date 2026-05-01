@@ -10,6 +10,9 @@ import com.aioweb.app.data.collections.HomeCollection
 import com.aioweb.app.data.collections.HomeCollections
 import com.aioweb.app.data.library.LibraryDb
 import com.aioweb.app.data.library.WatchProgressEntity
+import com.aioweb.app.data.nuvio.InstalledNuvioProvider
+import com.aioweb.app.data.nuvio.NuvioRepository
+import com.aioweb.app.data.nuvio.NuvioRuntime
 import com.aioweb.app.data.plugins.InstalledPlugin
 import com.aioweb.app.data.plugins.PluginRepository
 import com.aioweb.app.data.plugins.PluginRuntime
@@ -30,10 +33,24 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 const val SOURCE_BUILTIN = "builtin"
+const val SOURCE_STREMIO_PREFIX = "stremio_"
+const val SOURCE_NUVIO_PREFIX = "nuvio_"
 
 data class PluginSection(
     val title: String,
     val items: List<SearchResponse>,
+)
+
+data class StremioSection(
+    val title: String,
+    val addonName: String,
+    val items: List<StremioMetaPreview>,
+)
+
+data class NuvioSection(
+    val title: String,
+    val providerName: String,
+    val items: List<StremioMetaPreview>,
 )
 
 data class CollectionRow(
@@ -54,28 +71,61 @@ data class MoviesState(
     val searchResults: List<TmdbMovie> = emptyList(),
     val installedPlugins: List<InstalledPlugin> = emptyList(),
     val installedStremioAddons: List<InstalledStremioAddon> = emptyList(),
+    val installedNuvioProviders: List<InstalledNuvioProvider> = emptyList(),
+    /** Nuvio provider ids allowed on home (null = all installed). */
+    val nuvioHomeCatalogIds: Set<String>? = null,
     val selectedSourceId: String = SOURCE_BUILTIN,
     val loading: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
-    // Plugin-driven state
+    // CloudStream plugin-driven state
     val pluginSections: List<PluginSection> = emptyList(),
     val pluginSearchResults: List<SearchResponse> = emptyList(),
     val pluginLoading: Boolean = false,
     val pluginError: String? = null,
+    // Stremio addon-driven state
+    val stremioSections: List<StremioSection> = emptyList(),
+    val stremioLoading: Boolean = false,
+    val stremioError: String? = null,
+    // Nuvio provider-driven state
+    val nuvioSections: List<NuvioSection> = emptyList(),
+    val nuvioLoading: Boolean = false,
+    val nuvioError: String? = null,
 ) {
     /** Display name of the currently selected source. */
     val selectedSourceName: String
-        get() = if (selectedSourceId == SOURCE_BUILTIN) "TMDB"
-        else installedPlugins.firstOrNull { it.internalName == selectedSourceId }?.name ?: "Plugin"
+        get() = when {
+            selectedSourceId == SOURCE_BUILTIN -> "TMDB"
+            selectedSourceId.startsWith(SOURCE_STREMIO_PREFIX) -> {
+                val mUrl = selectedSourceId.removePrefix(SOURCE_STREMIO_PREFIX)
+                installedStremioAddons.firstOrNull { it.manifestUrl == mUrl }?.name ?: "Stremio"
+            }
+            selectedSourceId.startsWith(SOURCE_NUVIO_PREFIX) -> {
+                val id = selectedSourceId.removePrefix(SOURCE_NUVIO_PREFIX)
+                installedNuvioProviders.firstOrNull { it.id == id }?.name ?: "Nuvio"
+            }
+            else -> installedPlugins.firstOrNull { it.internalName == selectedSourceId }?.name ?: "Plugin"
+        }
 
-    val isPluginActive: Boolean get() = selectedSourceId != SOURCE_BUILTIN
+    val isPluginActive: Boolean
+        get() = selectedSourceId != SOURCE_BUILTIN &&
+            !selectedSourceId.startsWith(SOURCE_STREMIO_PREFIX) &&
+            !selectedSourceId.startsWith(SOURCE_NUVIO_PREFIX)
+
+    val isStremioActive: Boolean get() = selectedSourceId.startsWith(SOURCE_STREMIO_PREFIX)
+    val isNuvioActive: Boolean get() = selectedSourceId.startsWith(SOURCE_NUVIO_PREFIX)
+
+    /** Nuvio providers visible as home chips (respects catalog filter setting). */
+    val visibleNuvioProviders: List<InstalledNuvioProvider>
+        get() = if (nuvioHomeCatalogIds == null) installedNuvioProviders
+                else installedNuvioProviders.filter { it.id in nuvioHomeCatalogIds }
 }
 
 class MoviesViewModel(
     private val sl: ServiceLocator,
     private val pluginRepo: PluginRepository,
     private val stremioRepo: StremioRepository,
+    private val nuvioRepo: NuvioRepository,
     private val appContext: Context,
 ) : ViewModel() {
     private val _state = MutableStateFlow(MoviesState())
@@ -92,6 +142,17 @@ class MoviesViewModel(
         viewModelScope.launch {
             stremioRepo.addons.collect { list ->
                 _state.update { it.copy(installedStremioAddons = list) }
+            }
+        }
+        viewModelScope.launch {
+            nuvioRepo.installed.collect { list ->
+                _state.update { it.copy(installedNuvioProviders = list) }
+            }
+        }
+        viewModelScope.launch {
+            sl.settings.nuvioHomeCatalogCsv.collect { csv ->
+                val ids = csv?.takeIf { it.isNotBlank() }?.split(",")?.toSet()
+                _state.update { it.copy(nuvioHomeCatalogIds = ids) }
             }
         }
         // Auto-reload home rows whenever the user toggles a collection in Settings.
@@ -157,10 +218,20 @@ class MoviesViewModel(
                 pluginSections = emptyList(),
                 pluginSearchResults = emptyList(),
                 pluginError = null,
+                stremioSections = emptyList(),
+                stremioError = null,
+                nuvioSections = emptyList(),
+                nuvioError = null,
             )
         }
-        if (sourceId != SOURCE_BUILTIN) loadPluginHome(sourceId)
-        else _state.update { it.copy(notice = null) }
+        when {
+            sourceId == SOURCE_BUILTIN -> _state.update { it.copy(notice = null) }
+            sourceId.startsWith(SOURCE_STREMIO_PREFIX) ->
+                loadStremioHome(sourceId.removePrefix(SOURCE_STREMIO_PREFIX))
+            sourceId.startsWith(SOURCE_NUVIO_PREFIX) ->
+                loadNuvioHome(sourceId.removePrefix(SOURCE_NUVIO_PREFIX))
+            else -> loadPluginHome(sourceId)
+        }
     }
 
     private fun loadPluginHome(sourceId: String) {
@@ -207,6 +278,116 @@ class MoviesViewModel(
         }
     }
 
+    private fun loadStremioHome(manifestUrl: String) {
+        val addon = _state.value.installedStremioAddons.firstOrNull { it.manifestUrl == manifestUrl }
+        if (addon == null) {
+            _state.update { it.copy(stremioError = "Stremio addon not found.") }
+            return
+        }
+        _state.update { it.copy(stremioLoading = true, stremioError = null) }
+        viewModelScope.launch {
+            try {
+                val mf = stremioRepo.fetchManifest(addon.manifestUrl)
+                // Fetch all non-search-required catalogs in parallel
+                val sections = mf.catalogs
+                    .filter { c -> c.extra?.none { it.isRequired && it.name.lowercase() == "search" } != false }
+                    .map { cat ->
+                        async {
+                            runCatching {
+                                val items = stremioRepo.fetchCatalog(addon, cat.type, cat.id)
+                                if (items.isNotEmpty())
+                                    StremioSection(
+                                        title = cat.name ?: cat.id,
+                                        addonName = addon.name,
+                                        items = items,
+                                    )
+                                else null
+                            }.getOrNull()
+                        }
+                    }.awaitAll().filterNotNull()
+
+                if (sections.isEmpty()) {
+                    _state.update {
+                        it.copy(
+                            stremioLoading = false,
+                            stremioError = "${addon.name} returned no catalog items.",
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(stremioLoading = false, stremioSections = sections, stremioError = null)
+                    }
+                }
+            } catch (e: Throwable) {
+                _state.update {
+                    it.copy(
+                        stremioLoading = false,
+                        stremioError = "Stremio failed: ${e::class.simpleName}: ${e.message}",
+                    )
+                }
+            }
+        }
+    }
+
+    private fun loadNuvioHome(providerId: String) {
+        val provider = _state.value.installedNuvioProviders.firstOrNull { it.id == providerId }
+        if (provider == null) {
+            _state.update { it.copy(nuvioError = "Nuvio provider not found.") }
+            return
+        }
+        _state.update { it.copy(nuvioLoading = true, nuvioError = null) }
+        viewModelScope.launch {
+            try {
+                // Run catalog fetch via the Stremio-compatible catalog endpoint exposed by Nuvio.
+                // Nuvio providers that expose a /manifest.json catalog are fetched as Stremio addons.
+                val fakeAddon = com.aioweb.app.data.stremio.InstalledStremioAddon(
+                    id = provider.id,
+                    name = provider.name,
+                    manifestUrl = provider.downloadUrl.substringBeforeLast("/") + "/manifest.json",
+                    baseUrl = provider.downloadUrl.substringBeforeLast("/"),
+                    logo = provider.logo,
+                    installedAt = provider.installedAt,
+                )
+                val mf = runCatching { stremioRepo.fetchManifest(fakeAddon.manifestUrl) }.getOrNull()
+                val sections = mf?.catalogs
+                    ?.filter { c -> c.extra?.none { it.isRequired && it.name.lowercase() == "search" } != false }
+                    ?.mapNotNull { cat ->
+                        runCatching {
+                            val items = stremioRepo.fetchCatalog(fakeAddon, cat.type, cat.id)
+                            if (items.isNotEmpty())
+                                NuvioSection(
+                                    title = cat.name ?: cat.id,
+                                    providerName = provider.name,
+                                    items = items,
+                                )
+                            else null
+                        }.getOrNull()
+                    } ?: emptyList()
+
+                if (sections.isEmpty()) {
+                    _state.update {
+                        it.copy(
+                            nuvioLoading = false,
+                            nuvioError = "${provider.name} returned no catalog content. " +
+                                "This provider may only support stream resolution, not browsing.",
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(nuvioLoading = false, nuvioSections = sections, nuvioError = null)
+                    }
+                }
+            } catch (e: Throwable) {
+                _state.update {
+                    it.copy(
+                        nuvioLoading = false,
+                        nuvioError = "Nuvio catalog failed: ${e::class.simpleName}: ${e.message}",
+                    )
+                }
+            }
+        }
+    }
+
     fun clearNotice() {
         _state.update { it.copy(notice = null) }
     }
@@ -245,6 +426,7 @@ class MoviesViewModel(
                     ServiceLocator.get(context),
                     PluginRepository(context.applicationContext),
                     StremioRepository(context.applicationContext),
+                    NuvioRepository(context.applicationContext),
                     context.applicationContext,
                 ) as T
             }

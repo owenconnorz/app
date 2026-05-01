@@ -35,6 +35,8 @@ object SettingsKeys {
     val YT_MUSIC_USER_AVATAR = stringPreferencesKey("yt_music_user_avatar")
     val NAV_TAB_ORDER = stringPreferencesKey("nav_tab_order")     // CSV of tab ids (movies,music,ai,library|adult)
     val PLAYLIST_THUMBS = stringPreferencesKey("playlist_thumbs") // JSON {playlistId: uriString}
+    /** CSV of Nuvio provider ids that should appear as home-screen source chips. Empty = all installed. */
+    val NUVIO_HOME_CATALOG = stringPreferencesKey("nuvio_home_catalog")
 }
 
 class SettingsRepository(private val context: Context) {
@@ -69,6 +71,12 @@ class SettingsRepository(private val context: Context) {
     val ytMusicCookie: Flow<String> = context.dataStore.data.map { it[SettingsKeys.YT_MUSIC_COOKIE] ?: "" }
     val ytMusicUserName: Flow<String> = context.dataStore.data.map { it[SettingsKeys.YT_MUSIC_USER_NAME] ?: "" }
     val ytMusicUserAvatar: Flow<String> = context.dataStore.data.map { it[SettingsKeys.YT_MUSIC_USER_AVATAR] ?: "" }
+
+    /**
+     * CSV of Nuvio provider ids enabled as home-screen source chips.
+     * Null/blank => show all installed providers.
+     */
+    val nuvioHomeCatalogCsv: Flow<String?> = context.dataStore.data.map { it[SettingsKeys.NUVIO_HOME_CATALOG] }
 
     /**
      * User-defined bottom navigation order. CSV of tab ids (subset of
@@ -107,6 +115,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setHomeCollections(ids: List<String>) =
         context.dataStore.edit { it[SettingsKeys.HOME_COLLECTIONS] = ids.joinToString(",") }
+
+    suspend fun setNuvioHomeCatalog(ids: List<String>) =
+        context.dataStore.edit { it[SettingsKeys.NUVIO_HOME_CATALOG] = ids.joinToString(",") }
 
     suspend fun setNavTabOrder(ids: List<String>) =
         context.dataStore.edit { it[SettingsKeys.NAV_TAB_ORDER] = ids.joinToString(",") }
