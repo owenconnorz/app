@@ -26,6 +26,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
  */
 
 /** Shared HTTP client every plugin uses. */
+@get:JvmName("getAppProperty")
 val app: Requests = Requests
 
 /**
