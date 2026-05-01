@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -65,7 +66,11 @@ import androidx.compose.ui.unit.sp
 import com.aioweb.app.BuildConfig
 import com.aioweb.app.data.ServiceLocator
 import com.aioweb.app.data.collections.HomeCollections
+import com.aioweb.app.data.nuvio.InstalledNuvioProvider
+import com.aioweb.app.data.nuvio.NuvioRepository
 import com.aioweb.app.data.plugins.PluginRepository
+import com.aioweb.app.data.stremio.InstalledStremioAddon
+import com.aioweb.app.data.stremio.StremioRepository
 import com.aioweb.app.data.updater.UpdateChecker
 import com.aioweb.app.data.updater.UpdateInfo
 import kotlinx.coroutines.flow.first
@@ -90,6 +95,8 @@ fun SettingsHubScreen(onOpenPlugins: () -> Unit) {
     val context = LocalContext.current
     val sl = remember { ServiceLocator.get(context) }
     val pluginRepo = remember { PluginRepository(context.applicationContext) }
+    val nuvioRepo = remember { NuvioRepository(context.applicationContext) }
+    val stremioRepo = remember { StremioRepository(context.applicationContext) }
     val scope = rememberCoroutineScope()
 
     // --- State hoisting for every setting ------------------------------
@@ -111,6 +118,10 @@ fun SettingsHubScreen(onOpenPlugins: () -> Unit) {
     var eqPreset by remember { mutableStateOf("flat") }
     var bassBoost by remember { mutableStateOf(false) }
     var enabledCollections by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var installedNuvioProviders by remember { mutableStateOf<List<InstalledNuvioProvider>>(emptyList()) }
+    var nuvioHomeCatalogIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var installedStremioAddons by remember { mutableStateOf<List<InstalledStremioAddon>>(emptyList()) }
+    var showNuvioCatalogDialog by remember { mutableStateOf(false) }
 
     // Dialog flags
     var showQualityVideoDialog by remember { mutableStateOf(false) }
@@ -147,6 +158,11 @@ fun SettingsHubScreen(onOpenPlugins: () -> Unit) {
         enabledCollections = csv?.takeIf { it.isNotBlank() }?.split(",")?.toSet()
             ?: HomeCollections.ALL.filter { it.defaultEnabled }.map { it.id }.toSet()
         pluginsCacheBytes = pluginRepo.pluginsCacheSize()
+        installedNuvioProviders = nuvioRepo.installed.first()
+        installedStremioAddons = stremioRepo.addons.first()
+        val nuvioCsv = sl.settings.nuvioHomeCatalogCsv.first()
+        nuvioHomeCatalogIds = nuvioCsv?.takeIf { it.isNotBlank() }?.split(",")?.toSet()
+            ?: installedNuvioProviders.map { it.id }.toSet()
     }
 
     Column(
@@ -435,6 +451,14 @@ fun SettingsHubScreen(onOpenPlugins: () -> Unit) {
                         subtitle = "${enabledCollections.size} of ${HomeCollections.ALL.size} enabled",
                         onClick = { showCollectionsDialog = true },
                     )
+                    if (installedNuvioProviders.isNotEmpty()) {
+                        InnerNavRow(
+                            icon = Icons.Default.Star,
+                            title = "Nuvio catalog on home",
+                            subtitle = "${nuvioHomeCatalogIds.size} of ${installedNuvioProviders.size} providers shown",
+                            onClick = { showNuvioCatalogDialog = true },
+                        )
+                    }
                     ToggleRow(
                         icon = Icons.Default.Visibility,
                         title = "Show Adult tab (18+)",
@@ -689,6 +713,22 @@ fun SettingsHubScreen(onOpenPlugins: () -> Unit) {
         NavOrderDialog(
             nsfw = nsfw,
             onDismiss = { showNavOrderDialog = false },
+        )
+    }
+    if (showNuvioCatalogDialog) {
+        NuvioCatalogDialog(
+            providers = installedNuvioProviders,
+            enabled = nuvioHomeCatalogIds,
+            onToggle = { id, on ->
+                nuvioHomeCatalogIds = if (on) nuvioHomeCatalogIds + id else nuvioHomeCatalogIds - id
+            },
+            onSave = {
+                scope.launch {
+                    sl.settings.setNuvioHomeCatalog(nuvioHomeCatalogIds.toList())
+                }
+                showNuvioCatalogDialog = false
+            },
+            onDismiss = { showNuvioCatalogDialog = false },
         )
     }
     if (showAboutDialog) {
@@ -1034,6 +1074,89 @@ private fun CollectionsDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Checkbox(checked = checked, onCheckedChange = { onToggle(c.id, it) })
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onSave) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun NuvioCatalogDialog(
+    providers: List<InstalledNuvioProvider>,
+    enabled: Set<String>,
+    onToggle: (String, Boolean) -> Unit,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nuvio catalog on home") },
+        text = {
+            Column(
+                Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    "Choose which installed Nuvio providers appear as source chips on the Movies home screen.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+                if (providers.isEmpty()) {
+                    Text(
+                        "No Nuvio providers installed. Go to Settings → Integration to add some.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                providers.forEach { p ->
+                    val checked = p.id in enabled
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onToggle(p.id, !checked) }
+                            .padding(vertical = 6.dp),
+                    ) {
+                        if (!p.logo.isNullOrBlank()) {
+                            coil.compose.AsyncImage(
+                                model = p.logo,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape),
+                            )
+                        } else {
+                            Box(
+                                Modifier
+                                    .size(32.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Default.Star, null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(p.name, style = MaterialTheme.typography.titleMedium)
+                            if (!p.description.isNullOrBlank()) {
+                                Text(
+                                    p.description,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        Checkbox(checked = checked, onCheckedChange = { onToggle(p.id, it) })
                     }
                 }
             }

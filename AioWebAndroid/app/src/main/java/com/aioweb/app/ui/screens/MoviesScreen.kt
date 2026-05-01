@@ -37,9 +37,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.aioweb.app.data.api.TmdbMovie
 import com.aioweb.app.data.library.WatchProgressEntity
+import com.aioweb.app.data.nuvio.InstalledNuvioProvider
 import com.aioweb.app.data.plugins.InstalledPlugin
+import com.aioweb.app.data.stremio.InstalledStremioAddon
+import com.aioweb.app.data.stremio.StremioMetaPreview
 import com.aioweb.app.ui.viewmodel.MoviesViewModel
+import com.aioweb.app.ui.viewmodel.NuvioSection
 import com.aioweb.app.ui.viewmodel.SOURCE_BUILTIN
+import com.aioweb.app.ui.viewmodel.SOURCE_NUVIO_PREFIX
+import com.aioweb.app.ui.viewmodel.SOURCE_STREMIO_PREFIX
+import com.aioweb.app.ui.viewmodel.StremioSection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,6 +72,8 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
             item {
                 SourceChipsRow(
                     plugins = state.installedPlugins,
+                    stremioAddons = state.installedStremioAddons,
+                    nuvioProviders = state.visibleNuvioProviders,
                     selectedId = state.selectedSourceId,
                     onSelect = vm::selectSource,
                 )
@@ -138,8 +147,96 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                         )
                     }
                 }
+            } else if (state.isStremioActive) {
+                // ── Stremio addon home feed ────────────────────────────
+                if (state.stremioLoading) {
+                    item {
+                        Row(
+                            Modifier.fillMaxWidth().padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Loading ${state.selectedSourceName} catalog…",
+                                color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+                state.stremioError?.let { err ->
+                    item {
+                        Column(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.errorContainer)
+                                .padding(16.dp),
+                        ) {
+                            Text("Stremio error", style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer)
+                            Spacer(Modifier.height(6.dp))
+                            Text(err, style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer)
+                        }
+                    }
+                }
+                state.stremioSections.forEachIndexed { idx, section ->
+                    item(key = "ssec_t_$idx") { SectionTitle(section.title) }
+                    item(key = "ssec_$idx") {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            items(section.items, key = { "ss_${idx}_${it.id}" }) { meta ->
+                                StremioPoster(meta)
+                            }
+                        }
+                    }
+                }
+            } else if (state.isNuvioActive) {
+                // ── Nuvio provider catalog home feed ────────────────────
+                if (state.nuvioLoading) {
+                    item {
+                        Row(
+                            Modifier.fillMaxWidth().padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Loading ${state.selectedSourceName} catalog…",
+                                color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+                state.nuvioError?.let { err ->
+                    item {
+                        Column(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.errorContainer)
+                                .padding(16.dp),
+                        ) {
+                            Text("Nuvio error", style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer)
+                            Spacer(Modifier.height(6.dp))
+                            Text(err, style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer)
+                        }
+                    }
+                }
+                state.nuvioSections.forEachIndexed { idx, section ->
+                    item(key = "nsec_t_$idx") { SectionTitle(section.title) }
+                    item(key = "nsec_$idx") {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            items(section.items, key = { "ns_${idx}_${it.id}" }) { meta ->
+                                StremioPoster(meta)
+                            }
+                        }
+                    }
+                }
             } else if (state.isPluginActive) {
-                // ── Plugin home feed sections ────────────────────────────
+                // ── CloudStream plugin home feed sections ────────────────────────────
                 state.pluginSections.forEachIndexed { idx, section ->
                     item(key = "psec_t_$idx") { SectionTitle(section.title) }
                     item(key = "psec_$idx") {
@@ -395,6 +492,8 @@ private fun MoviesSearchField(query: String, loading: Boolean, onQueryChange: (S
 @Composable
 private fun SourceChipsRow(
     plugins: List<InstalledPlugin>,
+    stremioAddons: List<InstalledStremioAddon>,
+    nuvioProviders: List<InstalledNuvioProvider>,
     selectedId: String,
     onSelect: (String) -> Unit,
 ) {
@@ -410,6 +509,7 @@ private fun SourceChipsRow(
                 onClick = { onSelect(SOURCE_BUILTIN) },
             )
         }
+        // CloudStream plugins
         items(plugins, key = { "pl_${it.internalName}" }) { p ->
             SourceChip(
                 label = p.name,
@@ -417,6 +517,26 @@ private fun SourceChipsRow(
                 logoUrl = p.iconUrl,
                 selected = selectedId == p.internalName,
                 onClick = { onSelect(p.internalName) },
+            )
+        }
+        // Stremio addons
+        items(stremioAddons, key = { "st_${it.manifestUrl}" }) { addon ->
+            SourceChip(
+                label = addon.name,
+                icon = Icons.Default.Bolt,
+                logoUrl = addon.logo,
+                selected = selectedId == "$SOURCE_STREMIO_PREFIX${addon.manifestUrl}",
+                onClick = { onSelect("$SOURCE_STREMIO_PREFIX${addon.manifestUrl}") },
+            )
+        }
+        // Nuvio providers
+        items(nuvioProviders, key = { "nv_${it.id}" }) { p ->
+            SourceChip(
+                label = p.name,
+                icon = Icons.Default.Star,
+                logoUrl = p.logo,
+                selected = selectedId == "$SOURCE_NUVIO_PREFIX${p.id}",
+                onClick = { onSelect("$SOURCE_NUVIO_PREFIX${p.id}") },
             )
         }
     }
