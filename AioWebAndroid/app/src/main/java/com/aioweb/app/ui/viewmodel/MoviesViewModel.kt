@@ -70,10 +70,8 @@ data class MoviesState(
     val continueWatching: List<WatchProgressEntity> = emptyList(),
     val searchResults: List<TmdbMovie> = emptyList(),
     val installedPlugins: List<InstalledPlugin> = emptyList(),
-    val installedStremioAddons: List<InstalledStremioAddon> = emptyList(),
     val installedNuvioProviders: List<InstalledNuvioProvider> = emptyList(),
-    /** Nuvio provider ids allowed on home (null = all installed). */
-    val nuvioHomeCatalogIds: Set<String>? = null,
+    val installedStremioAddons: List<InstalledStremioAddon> = emptyList(),
     val selectedSourceId: String = SOURCE_BUILTIN,
     val loading: Boolean = false,
     val error: String? = null,
@@ -87,7 +85,7 @@ data class MoviesState(
     val stremioSections: List<StremioSection> = emptyList(),
     val stremioLoading: Boolean = false,
     val stremioError: String? = null,
-    // Nuvio provider-driven state
+    // Nuvio provider-driven state (when selected as a source)
     val nuvioSections: List<NuvioSection> = emptyList(),
     val nuvioLoading: Boolean = false,
     val nuvioError: String? = null,
@@ -114,11 +112,6 @@ data class MoviesState(
 
     val isStremioActive: Boolean get() = selectedSourceId.startsWith(SOURCE_STREMIO_PREFIX)
     val isNuvioActive: Boolean get() = selectedSourceId.startsWith(SOURCE_NUVIO_PREFIX)
-
-    /** Nuvio providers visible as home chips (respects catalog filter setting). */
-    val visibleNuvioProviders: List<InstalledNuvioProvider>
-        get() = if (nuvioHomeCatalogIds == null) installedNuvioProviders
-                else installedNuvioProviders.filter { it.id in nuvioHomeCatalogIds }
 }
 
 class MoviesViewModel(
@@ -147,12 +140,6 @@ class MoviesViewModel(
         viewModelScope.launch {
             nuvioRepo.installed.collect { list ->
                 _state.update { it.copy(installedNuvioProviders = list) }
-            }
-        }
-        viewModelScope.launch {
-            sl.settings.nuvioHomeCatalogCsv.collect { csv ->
-                val ids = csv?.takeIf { it.isNotBlank() }?.split(",")?.toSet()
-                _state.update { it.copy(nuvioHomeCatalogIds = ids) }
             }
         }
         // Auto-reload home rows whenever the user toggles a collection in Settings.

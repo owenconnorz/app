@@ -37,10 +37,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.aioweb.app.data.api.TmdbMovie
 import com.aioweb.app.data.library.WatchProgressEntity
-import com.aioweb.app.data.nuvio.InstalledNuvioProvider
 import com.aioweb.app.data.plugins.InstalledPlugin
-import com.aioweb.app.data.stremio.InstalledStremioAddon
-import com.aioweb.app.data.stremio.StremioMetaPreview
 import com.aioweb.app.ui.viewmodel.MoviesViewModel
 import com.aioweb.app.ui.viewmodel.NuvioSection
 import com.aioweb.app.ui.viewmodel.SOURCE_BUILTIN
@@ -73,7 +70,6 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                 SourceChipsRow(
                     plugins = state.installedPlugins,
                     stremioAddons = state.installedStremioAddons,
-                    nuvioProviders = state.visibleNuvioProviders,
                     selectedId = state.selectedSourceId,
                     onSelect = vm::selectSource,
                 )
@@ -493,7 +489,6 @@ private fun MoviesSearchField(query: String, loading: Boolean, onQueryChange: (S
 private fun SourceChipsRow(
     plugins: List<InstalledPlugin>,
     stremioAddons: List<InstalledStremioAddon>,
-    nuvioProviders: List<InstalledNuvioProvider>,
     selectedId: String,
     onSelect: (String) -> Unit,
 ) {
@@ -527,16 +522,6 @@ private fun SourceChipsRow(
                 logoUrl = addon.logo,
                 selected = selectedId == "$SOURCE_STREMIO_PREFIX${addon.manifestUrl}",
                 onClick = { onSelect("$SOURCE_STREMIO_PREFIX${addon.manifestUrl}") },
-            )
-        }
-        // Nuvio providers
-        items(nuvioProviders, key = { "nv_${it.id}" }) { p ->
-            SourceChip(
-                label = p.name,
-                icon = Icons.Default.Star,
-                logoUrl = p.logo,
-                selected = selectedId == "$SOURCE_NUVIO_PREFIX${p.id}",
-                onClick = { onSelect("$SOURCE_NUVIO_PREFIX${p.id}") },
             )
         }
     }
