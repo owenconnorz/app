@@ -38,6 +38,7 @@ import coil.compose.AsyncImage
 import com.aioweb.app.data.api.TmdbMovie
 import com.aioweb.app.data.library.WatchProgressEntity
 import com.aioweb.app.data.plugins.InstalledPlugin
+import com.aioweb.app.data.stremio.InstalledStremioAddon
 import com.aioweb.app.ui.viewmodel.MoviesViewModel
 import com.aioweb.app.ui.viewmodel.NuvioSection
 import com.aioweb.app.ui.viewmodel.SOURCE_BUILTIN

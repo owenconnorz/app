@@ -71,12 +71,6 @@ class SettingsRepository(private val context: Context) {
     val ytMusicUserAvatar: Flow<String> = context.dataStore.data.map { it[SettingsKeys.YT_MUSIC_USER_AVATAR] ?: "" }
 
     /**
-     * CSV of Nuvio provider ids enabled as home-screen source chips.
-     * Null/blank => show all installed providers.
-     */
-    val nuvioHomeCatalogCsv: Flow<String?> = context.dataStore.data.map { it[SettingsKeys.NUVIO_HOME_CATALOG] }
-
-    /**
      * User-defined bottom navigation order. CSV of tab ids (subset of
      * `movies,music,ai,library,adult`). `settings` is always appended last.
      * Null/blank => use the hardcoded default order.
