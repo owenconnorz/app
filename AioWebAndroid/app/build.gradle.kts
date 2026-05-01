@@ -195,4 +195,10 @@ dependencies {
     // `MainActivityKt.mapper.readValue(...)` or `parsedSafe<...>()`. Without it,
     // every plugin dies with NoClassDefFoundError on first JSON parse.
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
+
+    // Gson — also used by some CloudStream plugins for JSON serialization
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    // Mockito + testing (if needed by plugins)
+    implementation("org.mockito:mockito-core:5.7.0")
 }
