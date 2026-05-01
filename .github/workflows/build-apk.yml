@@ -1,48 +1,42 @@
-name: Build AioWebAndroid Release APK
+name: Build AioWeb Android APK
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-    paths-ignore:
-      - "README.md"
-      - ".github/**/*.md"
-      - "assets/**"
-      - "fastlane/**"
+    branches: [ main, master ]
+    paths:
+      - 'AioWebAndroid/**'
+      - '.github/workflows/build-apk.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'AioWebAndroid/**'
+  workflow_dispatch:
 
-permissions:
-  contents: write
+defaults:
+  run:
+    working-directory: AioWebAndroid
 
 jobs:
-  build-release:
-    name: Build Release APK
+  build:
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        shell: bash
-        working-directory: AioWebAndroid
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
-          java-version: 17
-          distribution: temurin
-          cache: gradle
+          java-version: '17'
+          distribution: 'temurin'
 
-      - name: Grant execute permission for Gradle
-        run: chmod +x gradlew
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v7
+      - name: Setup Gradle (with caching + retry on transient CDN failures)
+        uses: gradle/actions/setup-gradle@v3
         with:
-          name: AioWebAndroid-release
-          path: app/build/outputs/apk/release/*.apk
+          gradle-version: wrapper
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
