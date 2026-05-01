@@ -11,7 +11,7 @@ import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFact
  * Centralized Retrofit client factory used by the app.
  */
 object Net {
-    private val json = Json {
+    val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
     }
