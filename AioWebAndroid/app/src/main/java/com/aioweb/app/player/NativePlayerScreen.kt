@@ -1,4 +1,3 @@
-// app/src/main/java/com/aioweb/app/player/NativePlayerScreen.kt
 package com.aioweb.app.player
 
 import android.content.Context
@@ -15,23 +14,19 @@ import androidx.media3.ui.PlayerView
 @Composable
 fun NativePlayerScreen(
     videoUrl: String,
-    // Add any other parameters your original version had here
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    
     val exoPlayer = remember(videoUrl) {
-        PlayerSource.createPlayer(context, videoUrl, isAdult = false) // default false
+        PlayerSource.createPlayer(context, videoUrl, isAdult = false)
     }
 
     DisposableEffect(exoPlayer) {
-        onDispose {
-            exoPlayer.release()
-        }
+        onDispose { exoPlayer.release() }
     }
 
     AndroidView(
-        factory = { ctx: Context ->
+        factory = { ctx ->
             PlayerView(ctx).apply {
                 player = exoPlayer
                 useController = true
