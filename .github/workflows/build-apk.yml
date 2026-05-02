@@ -12,10 +12,6 @@ on:
       - 'AioWebAndroid/**'
   workflow_dispatch:
 
-defaults:
-  run:
-    working-directory: AioWebAndroid
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -33,42 +29,35 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      # 🔥 FIX: Clear Gradle cache so CI does NOT use stale dependencies
+      # 🔥 FIX: Move into the correct module
+      - name: Move into AioWebAndroid module
+        run: cd AioWebAndroid
+        shell: bash
+
+      # 🔥 FIX: Clear Gradle cache
       - name: Clear Gradle cache
         run: rm -rf ~/.gradle/caches
 
-      # Gradle wrapper setup (with retry)
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: wrapper
 
-      # Optional: Cache wrapper only (NOT caches)
-      - name: Cache Gradle Wrapper
-        uses: actions/cache@v3
-        with:
-          path: ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('**/gradle-wrapper.properties') }}
-
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+        run: chmod +x AioWebAndroid/gradlew
 
-      # 🔥 Build Debug APK
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: cd AioWebAndroid && ./gradlew assembleDebug --stacktrace
 
-      # 🔥 Build Release APK
       - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace
+        run: cd AioWebAndroid && ./gradlew assembleRelease --stacktrace
 
-      # Upload Debug APK
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: AioWebAndroid/app/build/outputs/apk/debug/*.apk
 
-      # Upload Release APK
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
