@@ -7,18 +7,15 @@ import android.view.KeyEvent
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import kotlin.math.max
-import kotlin.math.min
 
-/**
- * Hybrid gesture layer:
- * - Touch gestures (tap, double-tap, brightness, volume)
- * - Remote/DPAD detection
- * - TV-aware gesture zones
- */
 @Composable
 fun PlayerGestureLayer(
     modifier: Modifier = Modifier,
@@ -40,9 +37,7 @@ fun PlayerGestureLayer(
     var lastTapTime by remember { mutableStateOf(0L) }
     val doubleTapThreshold = 250L
 
-    // ------------------------------------------------------------
-    // REMOTE / DPAD INPUT DETECTION
-    // ------------------------------------------------------------
+    // Remote / DPAD detection
     LaunchedEffect(Unit) {
         activity.window.decorView.setOnKeyListener { _, keyCode, event ->
             if (event.action == KeyEvent.ACTION_DOWN) {
@@ -61,9 +56,6 @@ fun PlayerGestureLayer(
         }
     }
 
-    // ------------------------------------------------------------
-    // TOUCH GESTURES
-    // ------------------------------------------------------------
     Box(
         modifier = modifier
             .pointerInput(Unit) {
@@ -108,9 +100,7 @@ fun PlayerGestureLayer(
                     val leftZone = if (isLargeScreen) width * 0.45f else width * 0.4f
                     val rightZone = if (isLargeScreen) width * 0.55f else width * 0.6f
 
-                    // ------------------------------------------------------------
-                    // BRIGHTNESS GESTURE
-                    // ------------------------------------------------------------
+                    // Brightness (left)
                     if (x < leftZone) {
                         val lp = activity.window.attributes
                         val newBrightness = (lp.screenBrightness - dragAmount / 2000f)
@@ -119,10 +109,7 @@ fun PlayerGestureLayer(
                         activity.window.attributes = lp
                         onBrightnessChanged(newBrightness)
                     }
-
-                    // ------------------------------------------------------------
-                    // VOLUME GESTURE
-                    // ------------------------------------------------------------
+                    // Volume (right)
                     else if (x > rightZone) {
                         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                         val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
