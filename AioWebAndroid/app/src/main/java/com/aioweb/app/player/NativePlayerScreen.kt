@@ -1,5 +1,7 @@
 package com.aioweb.app.player
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.view.ViewGroup
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -23,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.aioweb.app.player.settings.PlayerSettingsManager
 import com.aioweb.app.player.settings.TopBarStyle
@@ -52,12 +55,22 @@ fun NativePlayerScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val activity = context as Activity
     val scope = rememberCoroutineScope()
     val settings = remember { PlayerSettingsManager(context) }
 
+    // Force landscape while in player
+    DisposableEffect(Unit) {
+        val oldOrientation = activity.requestedOrientation
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        onDispose {
+            activity.requestedOrientation = oldOrientation
+        }
+    }
+
     val topBarStyle by settings.topBarStyleFlow.collectAsState(initial = TopBarStyle.A)
 
-    // Player instance (renamed to avoid reassignment issues)
+    // Player instance
     val exoPlayer = remember(streamUrl) {
         PlayerSource.createPlayer(
             context = context,
@@ -85,7 +98,7 @@ fun NativePlayerScreen(
     val config = LocalConfiguration.current
     val isLargeScreen = config.screenWidthDp > 700
 
-    // Auto-hide controls
+    // Auto-hide controls (only in touch mode)
     LaunchedEffect(controlsVisible, isRemoteMode) {
         if (controlsVisible && !isRemoteMode) {
             delay(3000)
@@ -121,6 +134,7 @@ fun NativePlayerScreen(
                 PlayerView(ctx).apply {
                     useController = false
                     player = exoPlayer
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -177,7 +191,7 @@ fun NativePlayerScreen(
             }
         )
 
-        // Overlay UI
+        // Overlay UI (Nuvio)
         AnimatedVisibility(
             visible = controlsVisible,
             enter = fadeIn(),
@@ -223,7 +237,7 @@ fun NativePlayerScreen(
                         .padding(16.dp)
                 ) {
                     Slider(
-                        value = currentPosition.toFloat(),
+                        value = currentPosition.toFloat().coerceIn(0f, duration.toFloat()),
                         onValueChange = { exoPlayer.seekTo(it.toLong()) },
                         valueRange = 0f..duration.toFloat(),
                         modifier = Modifier.fillMaxWidth()
