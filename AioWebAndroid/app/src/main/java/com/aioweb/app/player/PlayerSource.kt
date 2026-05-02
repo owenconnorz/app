@@ -1,17 +1,13 @@
-// app/src/main/java/com/aioweb/app/player/PlayerSource.kt
 package com.aioweb.app.player
 
 import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 
-/**
- * Represents a concrete playable source (HTTP, HLS, magnet, YouTube, etc.)
- * plus some metadata used by the unified player UI.
- */
 @UnstableApi
 data class PlayerSource(
     val id: String,
@@ -23,10 +19,6 @@ data class PlayerSource(
 ) {
     companion object {
 
-        /**
-         * This is the FIXED version of createPlayer.
-         * It now uses PlayerPlaybackNetworking (OkHttp) instead of DefaultHttpDataSource.
-         */
         fun createPlayer(
             context: Context,
             videoUrl: String,
@@ -34,7 +26,6 @@ data class PlayerSource(
             extraHeaders: Map<String, String> = emptyMap(),
         ): ExoPlayer {
 
-            // Merge adult headers if needed
             val headers = if (isAdult) {
                 mapOf(
                     "Referer" to "https://www.eporner.com/",
@@ -45,14 +36,12 @@ data class PlayerSource(
                 extraHeaders
             }
 
-            // 🔥 Use your new OkHttp-powered DataSource
-            val dataSourceFactory =
+            val dataSourceFactory: DataSource.Factory =
                 PlayerPlaybackNetworking.createDataSourceFactory(
                     context = context,
                     defaultHeaders = headers
                 )
 
-            // Detect MIME type
             val mime = when {
                 videoUrl.contains(".m3u8", ignoreCase = true) ||
                 videoUrl.contains("hls", ignoreCase = true) -> MimeTypes.APPLICATION_M3U8
