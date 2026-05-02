@@ -5,8 +5,6 @@ import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 
@@ -24,48 +22,49 @@ data class PlayerSource(
     val isMagnet: Boolean,
 ) {
     companion object {
+
         /**
-         * Simple factory used by the NativePlayerScreen to spin up an ExoPlayer
-         * for a given URL. The higher‑level UI decides whether this is "adult"
-         * content and can toggle headers accordingly.
+         * This is the FIXED version of createPlayer.
+         * It now uses PlayerPlaybackNetworking (OkHttp) instead of DefaultHttpDataSource.
          */
         fun createPlayer(
             context: Context,
             videoUrl: String,
             isAdult: Boolean = false,
+            extraHeaders: Map<String, String> = emptyMap(),
         ): ExoPlayer {
-            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent(
-                    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36"
-                )
-                .setAllowCrossProtocolRedirects(true)
-                .setConnectTimeoutMs(15000)
-                .setReadTimeoutMs(15000)
 
-            if (isAdult) {
-                httpDataSourceFactory.setDefaultRequestProperties(
-                    mapOf(
-                        // You can tune these per‑site if needed.
-                        "Referer" to "https://example-adult-site.com/",
-                        "Origin" to "https://example-adult-site.com",
-                        "Accept" to "*/*",
-                    )
-                )
+            // Merge adult headers if needed
+            val headers = if (isAdult) {
+                mapOf(
+                    "Referer" to "https://www.eporner.com/",
+                    "Origin" to "https://www.eporner.com",
+                    "Accept" to "*/*",
+                ) + extraHeaders
+            } else {
+                extraHeaders
             }
 
-            val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+            // 🔥 Use your new OkHttp-powered DataSource
+            val dataSourceFactory =
+                PlayerPlaybackNetworking.createDataSourceFactory(
+                    context = context,
+                    defaultHeaders = headers
+                )
+
+            // Detect MIME type
+            val mime = when {
+                videoUrl.contains(".m3u8", ignoreCase = true) ||
+                videoUrl.contains("hls", ignoreCase = true) -> MimeTypes.APPLICATION_M3U8
+
+                videoUrl.contains(".mpd", ignoreCase = true) -> MimeTypes.APPLICATION_MPD
+
+                else -> MimeTypes.VIDEO_MP4
+            }
 
             val mediaItem = MediaItem.Builder()
                 .setUri(videoUrl)
-                .setMimeType(
-                    if (videoUrl.contains(".m3u8", ignoreCase = true) ||
-                        videoUrl.contains("hls", ignoreCase = true)
-                    ) {
-                        MimeTypes.APPLICATION_M3U8
-                    } else {
-                        MimeTypes.VIDEO_MP4
-                    }
-                )
+                .setMimeType(mime)
                 .build()
 
             return ExoPlayer.Builder(context)
