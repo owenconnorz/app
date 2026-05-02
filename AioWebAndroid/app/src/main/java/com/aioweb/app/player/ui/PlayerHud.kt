@@ -1,31 +1,31 @@
 package com.aioweb.app.player.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrightnessHigh
+import androidx.compose.material.icons.filled.BrightnessLow
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BrightnessHigh
-import androidx.compose.material.icons.filled.BrightnessLow
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.FastForward
-import androidx.compose.material.icons.filled.FastRewind
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-// ------------------------------------------------------------
-// RIPPLE ANIMATION (YouTube-style, auto-scaled for TV)
-// ------------------------------------------------------------
 @Composable
 fun RippleSeekIndicator(
     isForward: Boolean,
@@ -62,9 +62,6 @@ fun RippleSeekIndicator(
     }
 }
 
-// ------------------------------------------------------------
-// BRIGHTNESS HUD
-// ------------------------------------------------------------
 @Composable
 fun BrightnessHUD(
     visible: Boolean,
@@ -95,9 +92,6 @@ fun BrightnessHUD(
     }
 }
 
-// ------------------------------------------------------------
-// VOLUME HUD
-// ------------------------------------------------------------
 @Composable
 fun VolumeHUD(
     visible: Boolean,
@@ -128,17 +122,13 @@ fun VolumeHUD(
     }
 }
 
-// ------------------------------------------------------------
-// BUFFERING SPINNER
-// ------------------------------------------------------------
 @Composable
 fun BufferingHUD(
     isBuffering: Boolean
 ) {
     AnimatedVisibility(visible = isBuffering) {
         Box(
-            modifier = Modifier
-                .fillMaxSize(),
+            modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator(
