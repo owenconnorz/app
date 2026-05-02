@@ -5,9 +5,14 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,7 +26,15 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import com.aioweb.app.player.settings.PlayerSettingsManager
 import com.aioweb.app.player.settings.TopBarStyle
-import com.aioweb.app.player.ui.*
+import com.aioweb.app.player.ui.BrightnessHUD
+import com.aioweb.app.player.ui.BufferingHUD
+import com.aioweb.app.player.ui.NuvioTopBarA
+import com.aioweb.app.player.ui.NuvioTopBarB
+import com.aioweb.app.player.ui.NuvioTopBarC
+import com.aioweb.app.player.ui.PlayerGestureLayer
+import com.aioweb.app.player.ui.RippleSeekIndicator
+import com.aioweb.app.player.ui.SourceSelectorPopup
+import com.aioweb.app.player.ui.VolumeHUD
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -42,15 +55,10 @@ fun NativePlayerScreen(
     val scope = rememberCoroutineScope()
     val settings = remember { PlayerSettingsManager(context) }
 
-    // ------------------------------------------------------------
-    // READ USER TOP BAR SETTING
-    // ------------------------------------------------------------
     val topBarStyle by settings.topBarStyleFlow.collectAsState(initial = TopBarStyle.A)
 
-    // ------------------------------------------------------------
-    // PLAYER INSTANCE
-    // ------------------------------------------------------------
-    val player = remember(streamUrl) {
+    // Player instance (renamed to avoid reassignment issues)
+    val exoPlayer = remember(streamUrl) {
         PlayerSource.createPlayer(
             context = context,
             videoUrl = streamUrl,
@@ -58,9 +66,6 @@ fun NativePlayerScreen(
         )
     }
 
-    // ------------------------------------------------------------
-    // UI STATE
-    // ------------------------------------------------------------
     var controlsVisible by remember { mutableStateOf(true) }
     var currentPosition by remember { mutableStateOf(0L) }
     var duration by remember { mutableStateOf(1L) }
@@ -80,53 +85,42 @@ fun NativePlayerScreen(
     val config = LocalConfiguration.current
     val isLargeScreen = config.screenWidthDp > 700
 
-    // ------------------------------------------------------------
-    // AUTO-HIDE CONTROLS
-    // ------------------------------------------------------------
-    LaunchedEffect(controlsVisible) {
+    // Auto-hide controls
+    LaunchedEffect(controlsVisible, isRemoteMode) {
         if (controlsVisible && !isRemoteMode) {
             delay(3000)
             controlsVisible = false
         }
     }
 
-    // ------------------------------------------------------------
-    // PLAYER LISTENERS
-    // ------------------------------------------------------------
-    DisposableEffect(player) {
+    // Player listener
+    DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onIsLoadingChanged(isLoading: Boolean) {
                 isBuffering = isLoading
             }
         }
-        player.addListener(listener)
-        onDispose { player.removeListener(listener) }
+        exoPlayer.addListener(listener)
+        onDispose { exoPlayer.removeListener(listener) }
     }
 
-    // ------------------------------------------------------------
-    // PROGRESS UPDATER
-    // ------------------------------------------------------------
-    LaunchedEffect(player) {
+    // Progress updater
+    LaunchedEffect(exoPlayer) {
         while (true) {
-            currentPosition = player.currentPosition
-            duration = player.duration.takeIf { it > 0 } ?: 1L
+            currentPosition = exoPlayer.currentPosition
+            duration = exoPlayer.duration.takeIf { it > 0 } ?: 1L
             delay(200)
         }
     }
 
-    // ------------------------------------------------------------
-    // MAIN UI LAYOUT
-    // ------------------------------------------------------------
     Box(modifier = modifier.fillMaxSize()) {
 
-        // ------------------------------------------------------------
-        // PLAYER VIEW
-        // ------------------------------------------------------------
+        // PlayerView
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
-                    player = this@NativePlayerScreen.player
+                    player = exoPlayer
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -136,16 +130,14 @@ fun NativePlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // ------------------------------------------------------------
-        // GESTURE LAYER
-        // ------------------------------------------------------------
+        // Gesture layer
         PlayerGestureLayer(
             modifier = Modifier.fillMaxSize(),
             context = context,
             isLargeScreen = isLargeScreen,
             onToggleControls = { controlsVisible = !controlsVisible },
-            onSeekForward = { player.seekTo(player.currentPosition + 10_000) },
-            onSeekBack = { player.seekTo(player.currentPosition - 10_000) },
+            onSeekForward = { exoPlayer.seekTo(exoPlayer.currentPosition + 10_000) },
+            onSeekBack = { exoPlayer.seekTo(exoPlayer.currentPosition - 10_000) },
             onSeekForwardRipple = {
                 rippleForward = true
                 scope.launch {
@@ -185,9 +177,7 @@ fun NativePlayerScreen(
             }
         )
 
-        // ------------------------------------------------------------
-        // OVERLAY UI
-        // ------------------------------------------------------------
+        // Overlay UI
         AnimatedVisibility(
             visible = controlsVisible,
             enter = fadeIn(),
@@ -199,33 +189,25 @@ fun NativePlayerScreen(
                     .background(Color.Black.copy(alpha = 0.35f))
             ) {
 
-                // -------------------------
-                // TOP BAR (A/B/C)
-                // -------------------------
+                // Top bar
                 when (topBarStyle) {
                     TopBarStyle.A -> NuvioTopBarA(title, subtitle, onBack)
                     TopBarStyle.B -> NuvioTopBarB(title, subtitle, onBack)
                     TopBarStyle.C -> NuvioTopBarC(title, onBack)
                 }
 
-                // -------------------------
-                // CENTER PLAY/PAUSE
-                // -------------------------
+                // Center play/pause
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     IconButton(
                         onClick = {
-                            if (player.isPlaying) player.pause() else player.play()
+                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
                         }
                     ) {
                         Icon(
-                            imageVector =
-                                if (player.isPlaying)
-                                    Icons.Default.Pause
-                                else
-                                    Icons.Default.PlayArrow,
+                            imageVector = if (exoPlayer.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier.size(if (isLargeScreen) 96.dp else 64.dp)
@@ -233,21 +215,16 @@ fun NativePlayerScreen(
                     }
                 }
 
-                // -------------------------
-                // BOTTOM SEEK BAR
-                // -------------------------
+                // Bottom seek bar
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .padding(16.dp)
                 ) {
-
                     Slider(
                         value = currentPosition.toFloat(),
-                        onValueChange = {
-                            player.seekTo(it.toLong())
-                        },
+                        onValueChange = { exoPlayer.seekTo(it.toLong()) },
                         valueRange = 0f..duration.toFloat(),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -261,9 +238,7 @@ fun NativePlayerScreen(
                     }
                 }
 
-                // -------------------------
-                // SOURCE SELECTOR (BOTTOM RIGHT)
-                // -------------------------
+                // Source selector (bottom-right)
                 SourceSelectorPopup(
                     sources = sources,
                     selectedSourceId = selectedSourceId,
@@ -275,9 +250,7 @@ fun NativePlayerScreen(
             }
         }
 
-        // ------------------------------------------------------------
-        // RIPPLE INDICATORS
-        // ------------------------------------------------------------
+        // Ripple indicators
         if (rippleForward) {
             Box(
                 modifier = Modifier
@@ -285,7 +258,7 @@ fun NativePlayerScreen(
                     .padding(end = 80.dp),
                 contentAlignment = Alignment.CenterEnd
             ) {
-                RippleSeekIndicator(true, rippleForward, isLargeScreen)
+                RippleSeekIndicator(isForward = true, trigger = rippleForward, isLargeScreen = isLargeScreen)
             }
         }
 
@@ -296,26 +269,22 @@ fun NativePlayerScreen(
                     .padding(start = 80.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
-                RippleSeekIndicator(false, rippleBack, isLargeScreen)
+                RippleSeekIndicator(isForward = false, trigger = rippleBack, isLargeScreen = isLargeScreen)
             }
         }
 
-        // ------------------------------------------------------------
-        // BRIGHTNESS + VOLUME HUD
-        // ------------------------------------------------------------
+        // Brightness + Volume HUD
         Box(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.align(Alignment.CenterStart)) {
-                BrightnessHUD(brightnessHUD, brightnessLevel, isLargeScreen)
+                BrightnessHUD(visible = brightnessHUD, level = brightnessLevel, isLargeScreen = isLargeScreen)
             }
             Box(modifier = Modifier.align(Alignment.CenterEnd)) {
-                VolumeHUD(volumeHUD, volumeLevel, isLargeScreen)
+                VolumeHUD(visible = volumeHUD, level = volumeLevel, isLargeScreen = isLargeScreen)
             }
         }
 
-        // ------------------------------------------------------------
-        // BUFFERING HUD
-        // ------------------------------------------------------------
-        BufferingHUD(isBuffering)
+        // Buffering HUD
+        BufferingHUD(isBuffering = isBuffering)
     }
 }
 
