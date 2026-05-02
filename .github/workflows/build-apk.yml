@@ -4,12 +4,12 @@ on:
   push:
     branches: [ main, master ]
     paths:
-      - 'app/AioWebAndroid/**'
+      - 'app/**'
       - '.github/workflows/build-apk.yml'
   pull_request:
     branches: [ main, master ]
     paths:
-      - 'app/AioWebAndroid/**'
+      - 'app/**'
   workflow_dispatch:
 
 jobs:
@@ -29,12 +29,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      # 🔥 FIX: Move into the REAL module path
+      # 🔥 FIX: Move into the REAL module folder
       - name: Move into module
-        run: cd app/AioWebAndroid
+        run: cd app
         shell: bash
 
-      # 🔥 FIX: Clear Gradle cache
+      # 🔥 Clear Gradle cache
       - name: Clear Gradle cache
         run: rm -rf ~/.gradle/caches
 
@@ -44,22 +44,22 @@ jobs:
           gradle-version: wrapper
 
       - name: Grant execute permission for gradlew
-        run: chmod +x app/AioWebAndroid/gradlew
+        run: chmod +x app/gradlew
 
       - name: Build Debug APK
-        run: cd app/AioWebAndroid && ./gradlew assembleDebug --stacktrace
+        run: cd app && ./gradlew assembleDebug --stacktrace
 
       - name: Build Release APK
-        run: cd app/AioWebAndroid && ./gradlew assembleRelease --stacktrace
+        run: cd app && ./gradlew assembleRelease --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: app/AioWebAndroid/app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: app/AioWebAndroid/app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/release/*.apk
