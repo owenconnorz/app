@@ -29,13 +29,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      # 🔥 Correct working directory on GitHub Actions:
+      # 🔥 Correct working directory:
       # /home/runner/work/app/app/AioWebAndroid
       - name: Move into Android project
-        run: cd app/AioWebAndroid
+        run: cd AioWebAndroid
         shell: bash
 
-      # 🔥 Clear Gradle cache to avoid stale deps
       - name: Clear Gradle cache
         run: rm -rf ~/.gradle/caches
 
@@ -45,22 +44,22 @@ jobs:
           gradle-version: wrapper
 
       - name: Grant execute permission for gradlew
-        run: chmod +x app/AioWebAndroid/gradlew
+        run: chmod +x AioWebAndroid/gradlew
 
       - name: Build Debug APK
-        run: cd app/AioWebAndroid && ./gradlew assembleDebug --stacktrace
+        run: cd AioWebAndroid && ./gradlew assembleDebug --stacktrace
 
       - name: Build Release APK
-        run: cd app/AioWebAndroid && ./gradlew assembleRelease --stacktrace
+        run: cd AioWebAndroid && ./gradlew assembleRelease --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: app/AioWebAndroid/app/build/outputs/apk/debug/*.apk
+          path: AioWebAndroid/app/build/outputs/apk/debug/*.apk
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: app/AioWebAndroid/app/build/outputs/apk/release/*.apk
+          path: AioWebAndroid/app/build/outputs/apk/release/*.apk
