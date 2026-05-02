@@ -26,11 +26,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.aioweb.app.data.api.EpornerVideo
+import com.aioweb.app.player.PlayerSource
 import com.aioweb.app.ui.viewmodel.AdultViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AdultScreen(onPlay: (videoId: String, fallbackEmbed: String, title: String) -> Unit) {
+fun AdultScreen(
+    onPlay: (videoId: String, fallbackEmbed: String, title: String) -> Unit
+) {
     val context = LocalContext.current
     val vm: AdultViewModel = viewModel(factory = AdultViewModel.factory(context))
     val state by vm.state.collectAsState()
@@ -41,7 +44,8 @@ fun AdultScreen(onPlay: (videoId: String, fallbackEmbed: String, title: String) 
     ) {
         Spacer(Modifier.height(12.dp))
         Text(
-            "Adult", style = MaterialTheme.typography.displayLarge,
+            "Adult", 
+            style = MaterialTheme.typography.displayLarge,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.padding(horizontal = 20.dp),
         )
@@ -76,9 +80,11 @@ fun AdultScreen(onPlay: (videoId: String, fallbackEmbed: String, title: String) 
             )
         )
         Spacer(Modifier.height(8.dp))
+
         state.error?.let {
             Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(20.dp))
         }
+
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             contentPadding = PaddingValues(16.dp),
@@ -86,7 +92,9 @@ fun AdultScreen(onPlay: (videoId: String, fallbackEmbed: String, title: String) 
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(state.videos, key = { it.id }) { v ->
-                AdultCard(v) { onPlay(v.id, v.embed, v.title) }
+                AdultCard(v) {
+                    onPlay(v.id, v.embed, v.title)
+                }
             }
         }
     }
@@ -135,7 +143,8 @@ private fun AdultCard(v: EpornerVideo, onClick: () -> Unit) {
                 )
             }
             Icon(
-                Icons.Default.PlayCircle, null,
+                Icons.Default.PlayCircle, 
+                null,
                 tint = Color.White.copy(alpha = 0.85f),
                 modifier = Modifier.align(Alignment.Center).size(48.dp),
             )
