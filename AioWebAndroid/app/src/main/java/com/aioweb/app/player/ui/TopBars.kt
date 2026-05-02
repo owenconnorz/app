@@ -2,11 +2,14 @@ package com.aioweb.app.player.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -14,9 +17,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-// -------------------------
-// STYLE A — Cloudstream Nuvio
-// -------------------------
 @Composable
 fun NuvioTopBarA(
     title: String,
@@ -47,9 +47,6 @@ fun NuvioTopBarA(
     }
 }
 
-// -------------------------
-// STYLE B — Enhanced Nuvio
-// -------------------------
 @Composable
 fun NuvioTopBarB(
     title: String,
@@ -91,9 +88,6 @@ fun NuvioTopBarB(
     }
 }
 
-// -------------------------
-// STYLE C — Minimal Nuvio
-// -------------------------
 @Composable
 fun NuvioTopBarC(
     title: String,
