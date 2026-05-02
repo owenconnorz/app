@@ -12,11 +12,9 @@ import androidx.media3.ui.PlayerView
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-fun NativePlayerScreen(
-    videoUrl: String,
-    modifier: Modifier = Modifier
-) {
+fun NativePlayerScreen(videoUrl: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    
     val exoPlayer = remember(videoUrl) {
         PlayerSource.createPlayer(context, videoUrl, isAdult = false)
     }
