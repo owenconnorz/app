@@ -14,4 +14,4 @@ downloads for music not working correctly.
 NSFW ai not working.
 
 
-# Note Streamcloud doesnt host any data and is entirely a plugin only support!
+## Note Streamcloud doesnt host any data and is entirely a plugin only support!
