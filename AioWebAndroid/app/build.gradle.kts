@@ -2,7 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
-    id("org.jetbrains.kotlin.kapt")
+    id("com.google.devtools.ksp")
 }
 
 import java.util.Properties
@@ -25,30 +25,48 @@ android {
         versionName = "1.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
 
         buildConfigField(
-            "String", "DEFAULT_BACKEND_URL",
+            "String",
+            "DEFAULT_BACKEND_URL",
             "\"https://aio-android-port.preview.emergentagent.com\""
         )
-        buildConfigField("String", "TMDB_API_KEY", "\"8265bd1679663a7ea12ac168da84d2e8\"")
+
+        buildConfigField(
+            "String",
+            "TMDB_API_KEY",
+            "\"8265bd1679663a7ea12ac168da84d2e8\""
+        )
 
         val ghRepository = System.getenv("GITHUB_REPOSITORY") ?: "owenconnorz/AioWeb"
         val ghOwner = ghRepository.substringBefore('/')
-        val ghName  = ghRepository.substringAfter('/')
+        val ghName = ghRepository.substringAfter('/')
+
         buildConfigField("String", "GITHUB_OWNER", "\"$ghOwner\"")
-        buildConfigField("String", "GITHUB_REPO",  "\"$ghName\"")
+        buildConfigField("String", "GITHUB_REPO", "\"$ghName\"")
     }
 
     signingConfigs {
         val fallbackKs = rootProject.file("streamcloud-debug.jks")
 
         create("release") {
-            val ksPathEnv = System.getenv("KEYSTORE_PATH") ?: keystoreProps["storeFile"]?.toString()
+            val ksPathEnv = System.getenv("KEYSTORE_PATH")
+                ?: keystoreProps["storeFile"]?.toString()
+
             val ksPath = ksPathEnv?.let { file(it) }?.takeIf { it.exists() } ?: fallbackKs
             val realKey = ksPathEnv != null && ksPath.absolutePath == ksPathEnv
 
             storeFile = ksPath
-            storePassword = if (realKey) System.getenv("KEYSTORE_PASSWORD") ?: keystoreProps["storePassword"]?.toString() else "streamcloud"
-            keyAlias = if (realKey) System.getenv("KEY_ALIAS") ?: keystoreProps["keyAlias"]?.toString() else "streamcloud-debug"
-            keyPassword = if (realKey) System.getenv("KEY_PASSWORD") ?: keystoreProps["keyPassword"]?.toString() else "streamcloud"
+            storePassword = if (realKey)
+                System.getenv("KEYSTORE_PASSWORD") ?: keystoreProps["storePassword"]?.toString()
+            else "streamcloud"
+
+            keyAlias = if (realKey)
+                System.getenv("KEY_ALIAS") ?: keystoreProps["keyAlias"]?.toString()
+            else "streamcloud-debug"
+
+            keyPassword = if (realKey)
+                System.getenv("KEY_PASSWORD") ?: keystoreProps["keyPassword"]?.toString()
+            else "streamcloud"
+
             enableV1Signing = true
             enableV2Signing = true
             enableV3Signing = true
@@ -58,9 +76,13 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             signingConfig = signingConfigs.getByName("release")
         }
+
         debug {
             isDebuggable = true
             applicationIdSuffix = ".debug"
@@ -99,6 +121,7 @@ android {
 }
 
 dependencies {
+
     // Core
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
@@ -122,7 +145,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
-    // Networking (FIXED)
+    // Networking
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -134,7 +157,7 @@ dependencies {
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
-    // ✅ Media3 (FULL + FIXED)
+    // Media3
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
     implementation("androidx.media3:media3-exoplayer-dash:1.4.1")
@@ -151,7 +174,7 @@ dependencies {
     implementation("org.libtorrent4j:libtorrent4j-android-x86_64:2.1.0-32")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 
-    // NewPipe (safe)
+    // NewPipe
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.0") {
         exclude(group = "org.mozilla", module = "rhino")
     }
@@ -161,10 +184,10 @@ dependencies {
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
-    // Room
+    // ✅ Room (FIXED → KSP)
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
-    kapt("androidx.room:room-compiler:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
 
     // UI helpers
     implementation("androidx.palette:palette-ktx:1.0.0")
@@ -172,7 +195,7 @@ dependencies {
     // JS engine
     implementation("io.github.dokar3:quickjs-kt-android:1.0.0-alpha09")
 
-    // JSON libs
+    // JSON
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     implementation("com.google.code.gson:gson:2.10.1")
 
