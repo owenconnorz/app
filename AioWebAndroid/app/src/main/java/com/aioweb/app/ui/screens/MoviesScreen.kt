@@ -1,33 +1,23 @@
 package com.aioweb.app.ui.screens
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import com.aioweb.app.data.api.TmdbMovie
-import com.aioweb.app.ui.viewmodel.*
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aioweb.app.ui.viewmodel.MoviesViewModel
+import com.lagradost.cloudstream3.SearchResponse
+import com.aioweb.app.data.stremio.StremioMetaPreview
 
 @Composable
 fun MoviesScreen(
     onMovieClick: (Long) -> Unit
 ) {
-    val context = LocalContext.current
-
-    val vm: MoviesViewModel = viewModel(
-        factory = MoviesViewModel.factory(context)
-    )
-
+    val vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(LocalContext.current))
     val state by vm.state.collectAsState()
 
     LaunchedEffect(Unit) {
@@ -36,127 +26,112 @@ fun MoviesScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
 
-        // 🔥 SOURCE SWITCHER
-        SourceSwitcher(state, vm)
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize()
-        ) {
-
-            // 🎬 TMDB CONTENT (POSTERS)
-            if (state.selectedSourceId == SOURCE_BUILTIN) {
-                state.collections.forEach { row ->
-
-                    item {
-                        SectionTitle(row.title)
-                    }
-
-                    item {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            items(row.items) { movie ->
-                                MoviePosterCard(movie, onMovieClick)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 🔌 PLUGINS
-            if (state.isPluginActive) {
-                state.pluginSections.forEach { section ->
-                    item { SectionTitle(section.title) }
-
-                    items(section.items) { item ->
-                        Text(
-                            text = item.name ?: "Unknown",
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                }
-            }
-
-            // 📺 STREMIO
-            if (state.isStremioActive) {
-                state.stremioSections.forEach { section ->
-                    item { SectionTitle(section.title) }
-
-                    items(section.items) { item ->
-                        Text(
-                            text = item.name ?: "Unknown",
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                }
-            }
-
-            // 🌐 NUVIO
-            if (state.isNuvioActive) {
-                state.nuvioSections.forEach { section ->
-                    item { SectionTitle(section.title) }
-
-                    items(section.items) { item ->
-                        Text(
-                            text = item.name ?: "Unknown",
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                }
-            }
-
-            // ⏳ Loading / Error
-            item {
-                if (state.loading) {
-                    Text("Loading...", modifier = Modifier.padding(16.dp))
-                }
-
-                state.error?.let {
-                    Text("Error: $it", modifier = Modifier.padding(16.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SourceSwitcher(
-    state: MoviesState,
-    vm: MoviesViewModel
-) {
-    Column(modifier = Modifier.padding(8.dp)) {
-
-        Text("Source: ${state.selectedSourceName}")
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
+        // 🔹 SOURCE SELECTOR
+        LazyRow(
+            modifier = Modifier.padding(8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-
-            SourceButton("TMDB") {
-                vm.selectSource(SOURCE_BUILTIN)
-            }
-
-            state.installedPlugins.forEach { plugin ->
-                SourceButton(plugin.name) {
-                    vm.selectSource(plugin.internalName)
+            item {
+                SourceChip("TMDB", state.selectedSourceId == "builtin") {
+                    vm.selectSource("builtin")
                 }
             }
 
-            state.installedStremioAddons.forEach { addon ->
-                SourceButton(addon.name) {
-                    vm.selectSource(SOURCE_STREMIO_PREFIX + addon.manifestUrl)
+            state.installedPlugins.forEach {
+                item {
+                    SourceChip(it.name, state.selectedSourceId == it.internalName) {
+                        vm.selectSource(it.internalName)
+                    }
                 }
             }
 
-            state.installedNuvioProviders.forEach { provider ->
-                SourceButton(provider.name) {
-                    vm.selectSource(SOURCE_NUVIO_PREFIX + provider.id)
+            state.installedStremioAddons.forEach {
+                item {
+                    SourceChip(it.name, state.selectedSourceId == "stremio_${it.manifestUrl}") {
+                        vm.selectSource("stremio_${it.manifestUrl}")
+                    }
+                }
+            }
+
+            state.installedNuvioProviders.forEach {
+                item {
+                    SourceChip(it.name, state.selectedSourceId == "nuvio_${it.id}") {
+                        vm.selectSource("nuvio_${it.id}")
+                    }
+                }
+            }
+        }
+
+        // 🔴 MAIN CONTENT SWITCH
+        when {
+            state.isPluginActive -> PluginContent(state)
+            state.isStremioActive -> StremioContent(state)
+            state.isNuvioActive -> NuvioContent(state)
+            else -> TmdbContent(state, onMovieClick)
+        }
+    }
+}
+
+//
+// ===================== TMDB =====================
+//
+
+@Composable
+private fun TmdbContent(
+    state: com.aioweb.app.ui.viewmodel.MoviesState,
+    onMovieClick: (Long) -> Unit
+) {
+    LazyColumn {
+
+        item {
+            Section("Trending", state.trending) {
+                MovieCard(it.id, it.displayTitle, it.posterUrl, onMovieClick)
+            }
+        }
+
+        item {
+            Section("Popular", state.popular) {
+                MovieCard(it.id, it.displayTitle, it.posterUrl, onMovieClick)
+            }
+        }
+    }
+}
+
+//
+// ===================== PLUGIN =====================
+//
+
+@Composable
+private fun PluginContent(state: com.aioweb.app.ui.viewmodel.MoviesState) {
+
+    if (state.pluginLoading) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    if (state.pluginError != null) {
+        Text("Error: ${state.pluginError}", modifier = Modifier.padding(16.dp))
+        return
+    }
+
+    LazyColumn {
+        state.pluginSections.forEach { section ->
+
+            item {
+                Text(
+                    section.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+
+            item {
+                LazyRow {
+                    items(section.items) { item ->
+                        PluginCard(item)
+                    }
                 }
             }
         }
@@ -164,55 +139,153 @@ private fun SourceSwitcher(
 }
 
 @Composable
-private fun SourceButton(
-    text: String,
-    onClick: () -> Unit
-) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.height(40.dp)
+private fun PluginCard(item: SearchResponse) {
+
+    val poster = item.posterUrl ?: item.poster
+
+    Column(
+        modifier = Modifier
+            .width(120.dp)
+            .padding(8.dp)
+            .clickable {
+                // TODO: open plugin detail / load links
+            }
     ) {
-        Text(text)
+        AsyncImage(
+            model = poster,
+            contentDescription = item.name,
+            modifier = Modifier
+                .height(180.dp)
+                .fillMaxWidth()
+        )
+
+        Text(
+            text = item.name ?: "Unknown",
+            maxLines = 2
+        )
+    }
+}
+
+//
+// ===================== STREMIO =====================
+//
+
+@Composable
+private fun StremioContent(state: com.aioweb.app.ui.viewmodel.MoviesState) {
+    LazyColumn {
+        state.stremioSections.forEach { section ->
+
+            item {
+                Text(section.title, modifier = Modifier.padding(8.dp))
+            }
+
+            item {
+                LazyRow {
+                    items(section.items) {
+                        StremioCard(it)
+                    }
+                }
+            }
+        }
+    }
+}
+
+//
+// ===================== NUVIO =====================
+//
+
+@Composable
+private fun NuvioContent(state: com.aioweb.app.ui.viewmodel.MoviesState) {
+    LazyColumn {
+        state.nuvioSections.forEach { section ->
+
+            item {
+                Text(section.title, modifier = Modifier.padding(8.dp))
+            }
+
+            item {
+                LazyRow {
+                    items(section.items) {
+                        StremioCard(it)
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun SectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(12.dp)
-    )
+private fun StremioCard(item: StremioMetaPreview) {
+    Column(
+        modifier = Modifier
+            .width(120.dp)
+            .padding(8.dp)
+    ) {
+        AsyncImage(
+            model = item.poster,
+            contentDescription = item.name,
+            modifier = Modifier
+                .height(180.dp)
+                .fillMaxWidth()
+        )
+
+        Text(item.name ?: "")
+    }
 }
 
+//
+// ===================== COMMON =====================
+//
+
 @Composable
-fun MoviePosterCard(
-    movie: TmdbMovie,
+private fun MovieCard(
+    id: Long,
+    title: String,
+    poster: String?,
     onClick: (Long) -> Unit
 ) {
     Column(
         modifier = Modifier
             .width(120.dp)
-            .clickable { onClick(movie.id) }
+            .padding(8.dp)
+            .clickable { onClick(id) }
     ) {
-
         AsyncImage(
-            model = movie.posterUrl ?: "https://via.placeholder.com/500x750",
-            contentDescription = movie.displayTitle,
+            model = poster,
+            contentDescription = title,
             modifier = Modifier
                 .height(180.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp)),
-            contentScale = ContentScale.Crop
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Text(title, maxLines = 2)
+    }
+}
 
-        Text(
-            text = movie.displayTitle,
-            maxLines = 2,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(horizontal = 2.dp)
-        )
+@Composable
+private fun Section(
+    title: String,
+    items: List<com.aioweb.app.data.api.TmdbMovie>,
+    content: @Composable (com.aioweb.app.data.api.TmdbMovie) -> Unit
+) {
+    Column {
+        Text(title, modifier = Modifier.padding(8.dp))
+
+        LazyRow {
+            items(items) {
+                content(it)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Button(onClick = onClick) {
+        Text(text)
     }
 }
