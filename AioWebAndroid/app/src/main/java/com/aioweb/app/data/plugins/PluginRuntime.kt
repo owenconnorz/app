@@ -1,235 +1,108 @@
 package com.aioweb.app.data.plugins
 
 import android.content.Context
-import com.lagradost.cloudstream3.HomePageResponse
-import com.lagradost.cloudstream3.LoadResponse
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.MainPageRequest
-import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.plugins.Plugin
 import dalvik.system.DexClassLoader
-import dalvik.system.DexFile
-import dalvik.system.PathClassLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.io.File
-import java.util.zip.ZipFile
 
-/**
- * Runtime for executing CloudStream `.cs3` plugins.
- *
- * Pipeline:
- *   1. The `.cs3` file is a renamed JAR/DEX (zip with classes.dex inside)
- *   2. Use [DexClassLoader] with our app's classloader as parent so plugin classes
- *      can resolve `com.lagradost.cloudstream3.MainAPI` etc. (we ship those stubs)
- *   3. Find the class annotated with `@CloudstreamPlugin` via the manifest entry
- *      `Plugin-Class` in `META-INF/MANIFEST.MF` (newer plugins) OR by scanning
- *      classes for a `Plugin` subclass (legacy)
- *   4. Instantiate it, call `load(context)` so the plugin registers its [MainAPI]
- *   5. Cache the loaded [MainAPI]s so future calls are instant
- */
 object PluginRuntime {
 
-    private data class LoadedPlugin(val plugin: Plugin, val apis: List<MainAPI>)
-    private val cache = mutableMapOf<String, LoadedPlugin>()
-    private val lastErrors = mutableMapOf<String, String>()
-
-    fun lastErrorFor(filePath: String): String? = lastErrors[filePath]
-
-    suspend fun load(context: Context, filePath: String): List<MainAPI> = withContext(Dispatchers.IO) {
-        cache[filePath]?.let { return@withContext it.apis }
-        try {
-            val src = File(filePath)
-            if (!src.exists()) error("Plugin file missing: $filePath")
-            // Android 14+ refuses to load DEX from a writable file. Copy it into a
-            // private read-only location and chmod it.
-            val readOnlyDir = File(context.codeCacheDir, "plugins-ro").apply { mkdirs() }
-            val readOnlyFile = File(readOnlyDir, src.name)
-            if (!readOnlyFile.exists() ||
-                readOnlyFile.length() != src.length() ||
-                readOnlyFile.lastModified() < src.lastModified()
-            ) {
-                src.copyTo(readOnlyFile, overwrite = true)
-            }
-            // setReadOnly() flips the user-write bit. Required for `DexClassLoader` on
-            // API 34+ — otherwise we get `SecurityException: Writable dex file ... is not allowed`.
-            @Suppress("ResultOfMethodCallIgnored")
-            readOnlyFile.setReadOnly()
-
-            val optimizedDir = File(context.codeCacheDir, "plugins-opt").apply { mkdirs() }
-            val loader = DexClassLoader(
-                readOnlyFile.absolutePath,
-                optimizedDir.absolutePath,
-                null,
-                context.classLoader,
-            )
-            val pluginClassName = readPluginClassName(readOnlyFile)
-                ?: scanDexForPluginClass(readOnlyFile, optimizedDir, context.classLoader)
-                ?: error("Could not find plugin class in `$filePath` (no `manifest.json`, " +
-                    "no `Plugin-Class` in MANIFEST.MF, and no `Plugin` subclass found in dex).")
-            val klass = loader.loadClass(pluginClassName)
-            val instance = klass.getDeclaredConstructor().newInstance() as? Plugin
-                ?: error("Class `$pluginClassName` is not a subclass of `Plugin`")
-            instance.beforeLoad()
-            instance.load(context)
-            instance.afterLoad()
-            val loaded = LoadedPlugin(instance, instance.apis.toList())
-            cache[filePath] = loaded
-            lastErrors.remove(filePath)
-            loaded.apis
-        } catch (e: Throwable) {
-            lastErrors[filePath] = "${e::class.simpleName}: ${e.message}"
-            emptyList()
-        }
-    }
-
-    @Serializable
-    private data class PluginManifest(
-        val pluginClassName: String? = null,
-        val name: String? = null,
-        val version: Int? = null,
-        val requiresResources: Boolean = false,
+    private data class LoadedPlugin(
+        val plugin: Plugin,
+        val apis: List<MainAPI>
     )
 
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val cache = mutableMapOf<String, LoadedPlugin>()
 
-    /**
-     * CloudStream plugins ship one of two metadata files:
-     *   1. `manifest.json` at the .cs3 root with `pluginClassName` (modern recloudstream)
-     *   2. `META-INF/MANIFEST.MF` with `Plugin-Class:` (legacy / Java JAR convention)
-     * We try both before falling back to dex scanning.
-     */
-    private fun readPluginClassName(file: File): String? {
-        // 1. CloudStream's actual format: `manifest.json` at the JAR root.
-        try {
-            ZipFile(file).use { zf ->
-                val entry = zf.getEntry("manifest.json")
-                if (entry != null) {
-                    val body = zf.getInputStream(entry).bufferedReader().use { it.readText() }
-                    val mf = runCatching { json.decodeFromString(PluginManifest.serializer(), body) }.getOrNull()
-                    val name = mf?.pluginClassName?.takeIf { it.isNotBlank() }
-                    if (name != null) return name
-                }
-            }
-        } catch (_: Exception) { /* fall through */ }
+    suspend fun load(context: Context, filePath: String): List<MainAPI> =
+        withContext(Dispatchers.IO) {
 
-        // 2. JAR convention: `META-INF/MANIFEST.MF` with `Plugin-Class:` attribute.
-        return try {
-            ZipFile(file).use { zf ->
-                val entry = zf.getEntry("META-INF/MANIFEST.MF") ?: return null
-                zf.getInputStream(entry).bufferedReader().useLines { lines ->
-                    lines.firstOrNull { it.startsWith("Plugin-Class:", ignoreCase = true) }
-                        ?.substringAfter(':')
-                        ?.trim()
-                }
-            }
-        } catch (_: Exception) { null }
-    }
+            cache[filePath]?.let { return@withContext it.apis }
 
-    /**
-     * Last-resort fallback: enumerate every class in the dex and pick the one that
-     * extends our [Plugin] base. Only used for legacy `.cs3` files that ship neither
-     * `manifest.json` nor `MANIFEST.MF` (rare but happens with old recloudstream forks).
-     *
-     * `DexFile` is technically deprecated since Android 8 but still functional and
-     * remains the only public API for this purpose without pulling in `dexlib2`.
-     */
-    @Suppress("DEPRECATION")
-    private fun scanDexForPluginClass(
-        readOnlyFile: File,
-        optimizedDir: File,
-        parent: ClassLoader,
-    ): String? {
-        return try {
+            val file = File(filePath)
+
+            val optimizedDir = File(context.codeCacheDir, "plugins").apply { mkdirs() }
+
             val loader = DexClassLoader(
-                readOnlyFile.absolutePath,
+                file.absolutePath,
                 optimizedDir.absolutePath,
                 null,
-                parent,
+                context.classLoader
             )
-            val dexFile = DexFile.loadDex(
-                readOnlyFile.absolutePath,
-                File(optimizedDir, readOnlyFile.name + ".odex").absolutePath,
-                0,
-            )
-            val pluginBase = Plugin::class.java
-            dexFile.entries().toList().firstOrNull { className ->
-                // Skip cloudstream3 stubs we ship in the host app.
-                if (className.startsWith("com.lagradost.cloudstream3.") &&
-                    !className.contains("plugin", ignoreCase = true)) return@firstOrNull false
-                runCatching {
-                    val c = loader.loadClass(className)
-                    pluginBase.isAssignableFrom(c) && !java.lang.reflect.Modifier.isAbstract(c.modifiers)
-                }.getOrDefault(false)
-            }
-        } catch (_: Throwable) { null }
-    }
 
-    suspend fun search(context: Context, filePath: String, query: String): List<SearchResponse> {
-        val apis = load(context, filePath)
-        return apis.flatMap { api ->
-            try { api.search(query).orEmpty() } catch (_: Throwable) { emptyList() }
-        }
-    }
+            val pluginClass = loader.loadClass("Plugin")
+            val plugin = pluginClass.getDeclaredConstructor().newInstance() as Plugin
 
-    suspend fun home(context: Context, filePath: String): List<Pair<String, List<SearchResponse>>> {
-        val apis = load(context, filePath)
-        if (apis.isEmpty()) {
-            // Either load() failed (lastErrors already populated) OR the plugin
-            // didn't register any MainAPI. Surface a useful message either way.
-            if (lastErrors[filePath] == null) {
-                lastErrors[filePath] = "Plugin loaded but registered 0 MainAPIs."
-            }
-            return emptyList()
+            plugin.load(context)
+
+            val apis = plugin.apis.toList()
+
+            cache[filePath] = LoadedPlugin(plugin, apis)
+
+            return@withContext apis
         }
-        val out = mutableListOf<Pair<String, List<SearchResponse>>>()
-        val perApiErrors = mutableListOf<String>()
+
+    suspend fun home(
+        context: Context,
+        filePath: String
+    ): List<Pair<String, List<SearchResponse>>> {
+
+        val apis = load(context, filePath)
+
+        val result = mutableListOf<Pair<String, List<SearchResponse>>>()
+
         apis.forEach { api ->
-            // CloudStream plugins normally declare `override val mainPage = mainPageOf(...)`.
-            // Some legacy/third-party providers leave it empty but still implement
-            // `getMainPage(page, request)` — synthesise a single default request so
-            // those still surface their home feed instead of looking "broken".
-            val requests = if (api.mainPage.isNotEmpty()) api.mainPage
-            else listOf(MainPageRequest(name = api.name, data = "", horizontalImages = false))
-            var apiSectionsAdded = 0
-            requests.forEach { req: MainPageRequest ->
-                try {
-                    val page = api.getMainPage(1, req)
-                    page?.items?.forEach { hpl ->
-                        if (hpl.list.isNotEmpty()) {
-                            out += hpl.name to hpl.list
-                            apiSectionsAdded++
-                        }
+            api.mainPage.forEach { req ->
+                val page = api.getMainPage(1, req)
+
+                page?.items?.forEach {
+                    if (it.list.isNotEmpty()) {
+                        result += it.name to it.list
                     }
-                } catch (e: Throwable) {
-                    perApiErrors += "${api.name} · ${req.name}: ${e::class.simpleName}: ${e.message}"
                 }
             }
-            if (apiSectionsAdded == 0 && perApiErrors.isEmpty()) {
-                perApiErrors += "${api.name}: getMainPage returned no items."
-            }
         }
-        if (out.isEmpty()) {
-            lastErrors[filePath] = perApiErrors.joinToString("\n").ifBlank {
-                "Plugin loaded but no sections were returned."
-            }
-        } else {
-            lastErrors.remove(filePath)
-        }
-        return out
+
+        return result
     }
 
-    suspend fun loadDetail(context: Context, filePath: String, url: String): LoadResponse? {
+    suspend fun search(
+        context: Context,
+        filePath: String,
+        query: String
+    ): List<SearchResponse> {
+
         val apis = load(context, filePath)
-        return apis.firstNotNullOfOrNull { api ->
-            try { api.load(url) } catch (_: Throwable) { null }
+
+        return apis.flatMap {
+            runCatching { it.search(query) }.getOrNull().orEmpty()
         }
     }
 
-    fun clear(filePath: String) {
-        cache.remove(filePath)
-        lastErrors.remove(filePath)
+    suspend fun loadLinks(
+        context: Context,
+        filePath: String,
+        url: String,
+        onLink: (com.lagradost.cloudstream3.utils.ExtractorLink) -> Unit
+    ) {
+
+        val apis = load(context, filePath)
+
+        apis.forEach { api ->
+            try {
+                val load = api.load(url) ?: return@forEach
+
+                api.loadLinks(
+                    data = load.url ?: return@forEach,
+                    isCasting = false,
+                    subtitleCallback = {},
+                    callback = { link -> onLink(link) }
+                )
+            } catch (_: Throwable) {
+            }
+        }
     }
 }
