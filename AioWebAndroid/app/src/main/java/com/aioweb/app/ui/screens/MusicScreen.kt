@@ -251,7 +251,7 @@ fun MusicScreen(
                             }
                         }
                     }
-                    item { SectionTitle("More from YouTube") }
+                    item { MusicSectionTitle("More from YouTube") }
                     items(state.homeFeed.drop(10), key = { "homerow_${it.url}" }) { track ->
                         SongRow(
                             track = track,
