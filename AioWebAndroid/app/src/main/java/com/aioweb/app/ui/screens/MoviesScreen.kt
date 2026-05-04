@@ -1,5 +1,24 @@
+package com.aioweb.app.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
+
+import com.aioweb.app.data.models.TmdbMovie
+import com.aioweb.app.ui.viewmodel.MoviesViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoviesScreen(onMovieClick: (Long) -> Unit) {
+
     val context = LocalContext.current
     val vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(context))
     val state by vm.state.collectAsState()
@@ -7,50 +26,50 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
     var query by remember { mutableStateOf("") }
 
     val mergedMovies = remember(state) {
-        buildList {
+        buildList<TmdbMovie> {
 
             state.collections.forEach { row ->
                 addAll(row.items)
             }
 
             state.stremioSections.forEach { section ->
-                section.items.forEach {
+                section.items.forEach { item ->
                     add(
                         TmdbMovie(
-                            id = "stremio_${it.id}".hashCode().toLong(),
-                            title = it.name,
-                            posterUrl = it.poster ?: "",
-                            backdropUrl = it.poster ?: "",
+                            id = item.id.hashCode().toLong(),
+                            title = item.name,
+                            posterUrl = item.poster ?: "",
+                            backdropUrl = item.poster ?: "",
                             voteAverage = 0.0,
-                            releaseDate = it.releaseInfo ?: ""
+                            releaseDate = item.releaseInfo ?: ""
                         )
                     )
                 }
             }
 
             state.nuvioSections.forEach { section ->
-                section.items.forEach {
+                section.items.forEach { item ->
                     add(
                         TmdbMovie(
-                            id = "nuvio_${it.id}".hashCode().toLong(),
-                            title = it.name,
-                            posterUrl = it.poster ?: "",
-                            backdropUrl = it.poster ?: "",
+                            id = item.id.hashCode().toLong(),
+                            title = item.name,
+                            posterUrl = item.poster ?: "",
+                            backdropUrl = item.poster ?: "",
                             voteAverage = 0.0,
-                            releaseDate = it.releaseInfo ?: ""
+                            releaseDate = item.releaseInfo ?: ""
                         )
                     )
                 }
             }
 
             state.pluginSections.forEach { section ->
-                section.items.forEach {
+                section.items.forEach { item ->
                     add(
                         TmdbMovie(
-                            id = "plugin_${it.url}".hashCode().toLong(),
-                            title = it.name,
-                            posterUrl = it.posterUrl ?: "",
-                            backdropUrl = it.posterUrl ?: "",
+                            id = item.url.hashCode().toLong(),
+                            title = item.name,
+                            posterUrl = item.posterUrl ?: "",
+                            backdropUrl = item.posterUrl ?: "",
                             voteAverage = 0.0,
                             releaseDate = ""
                         )
@@ -61,52 +80,38 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
     }
 
     Box(
-        Modifier
+        modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+
         LazyColumn(
-            Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
 
-            item { MoviesHeader() }
-
             item {
-                MoviesSearchField(
-                    query = query,
-                    loading = state.loading,
-                    onQueryChange = {
-                        query = it
-                        vm.search(it)
-                    }
+                Text(
+                    "🔥 Trending",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(16.dp)
                 )
             }
 
-            item { SectionTitle("🔥 Trending") }
-
             item {
-                when {
-                    state.loading -> {
-                        Box(Modifier.fillMaxWidth().padding(24.dp)) {
-                            CircularProgressIndicator(Modifier.align(Alignment.Center))
-                        }
+                if (state.loading) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp)
+                    ) {
+                        CircularProgressIndicator(Modifier.align(Alignment.Center))
                     }
-
-                    mergedMovies.isEmpty() -> {
-                        Text(
-                            "No content loaded",
-                            modifier = Modifier.padding(20.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    else -> {
-                        PosterGrid(
-                            movies = if (query.isBlank()) mergedMovies else state.searchResults,
-                            onClick = onMovieClick
-                        )
-                    }
+                } else {
+                    PosterGrid(
+                        movies = if (query.isBlank()) mergedMovies else state.searchResults,
+                        onClick = onMovieClick
+                    )
                 }
             }
         }
