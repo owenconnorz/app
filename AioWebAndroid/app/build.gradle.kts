@@ -116,6 +116,7 @@ android {
             excludes += "META-INF/DEPENDENCIES"
             excludes += "META-INF/LICENSE*"
             excludes += "META-INF/NOTICE*"
+            excludes += "META-INF/*.kotlin_module"
         }
     }
 }
@@ -159,20 +160,11 @@ dependencies {
 
     // Media3
     implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
-    implementation("androidx.media3:media3-exoplayer-dash:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
-    implementation("androidx.media3:media3-common:1.4.1")
-    implementation("androidx.media3:media3-datasource:1.4.1")
-    implementation("androidx.media3:media3-datasource-okhttp:1.4.1")
 
     // Torrent
     implementation("org.libtorrent4j:libtorrent4j:2.1.0-32")
-    implementation("org.libtorrent4j:libtorrent4j-android-arm64:2.1.0-32")
-    implementation("org.libtorrent4j:libtorrent4j-android-arm:2.1.0-32")
-    implementation("org.libtorrent4j:libtorrent4j-android-x86_64:2.1.0-32")
-    implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     // NewPipe
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.0") {
@@ -184,7 +176,7 @@ dependencies {
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
-    // ✅ Room (FIXED → KSP)
+    // Room
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
@@ -198,6 +190,8 @@ dependencies {
     // JSON
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
     implementation("com.google.code.gson:gson:2.10.1")
+    implementation("com.github.recloudstream:cloudstream:4.4.0")
+    implementation("com.github.recloudstream:cloudstream-extensions:4.4.0")
 
     // Testing
     implementation("org.mockito:mockito-core:5.7.0")
