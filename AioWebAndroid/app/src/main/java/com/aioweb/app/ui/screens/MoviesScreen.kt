@@ -1,16 +1,21 @@
 package com.aioweb.app.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.aioweb.app.data.api.TmdbMovie
 import com.aioweb.app.ui.viewmodel.*
 
 @Composable
@@ -25,7 +30,6 @@ fun MoviesScreen(
 
     val state by vm.state.collectAsState()
 
-    // Load once
     LaunchedEffect(Unit) {
         vm.loadDiscover()
     }
@@ -39,26 +43,28 @@ fun MoviesScreen(
             modifier = Modifier.fillMaxSize()
         ) {
 
-            // 🔥 TMDB CONTENT
+            // 🎬 TMDB CONTENT (POSTERS)
             if (state.selectedSourceId == SOURCE_BUILTIN) {
                 state.collections.forEach { row ->
+
                     item {
                         SectionTitle(row.title)
                     }
 
-                    items(row.items) { movie ->
-                        Text(
-                            text = movie.displayTitle,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onMovieClick(movie.id) }
-                                .padding(12.dp)
-                        )
+                    item {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(row.items) { movie ->
+                                MoviePosterCard(movie, onMovieClick)
+                            }
+                        }
                     }
                 }
             }
 
-            // 🔥 PLUGIN CONTENT
+            // 🔌 PLUGINS
             if (state.isPluginActive) {
                 state.pluginSections.forEach { section ->
                     item { SectionTitle(section.title) }
@@ -72,7 +78,7 @@ fun MoviesScreen(
                 }
             }
 
-            // 🔥 STREMIO CONTENT
+            // 📺 STREMIO
             if (state.isStremioActive) {
                 state.stremioSections.forEach { section ->
                     item { SectionTitle(section.title) }
@@ -86,7 +92,7 @@ fun MoviesScreen(
                 }
             }
 
-            // 🔥 NUVIO CONTENT
+            // 🌐 NUVIO
             if (state.isNuvioActive) {
                 state.nuvioSections.forEach { section ->
                     item { SectionTitle(section.title) }
@@ -100,7 +106,7 @@ fun MoviesScreen(
                 }
             }
 
-            // 🔥 LOADING / ERROR
+            // ⏳ Loading / Error
             item {
                 if (state.loading) {
                     Text("Loading...", modifier = Modifier.padding(16.dp))
@@ -123,43 +129,34 @@ private fun SourceSwitcher(
 
         Text("Source: ${state.selectedSourceName}")
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
 
-            // TMDB
-            Button(onClick = { vm.selectSource(SOURCE_BUILTIN) }) {
-                Text("TMDB")
+            SourceButton("TMDB") {
+                vm.selectSource(SOURCE_BUILTIN)
             }
 
-            // Plugins
             state.installedPlugins.forEach { plugin ->
-                Button(
-                    onClick = { vm.selectSource(plugin.internalName) }
-                ) {
-                    Text(plugin.name)
+                SourceButton(plugin.name) {
+                    vm.selectSource(plugin.internalName)
                 }
             }
 
-            // Stremio
             state.installedStremioAddons.forEach { addon ->
-                Button(
-                    onClick = {
-                        vm.selectSource(SOURCE_STREMIO_PREFIX + addon.manifestUrl)
-                    }
-                ) {
-                    Text(addon.name)
+                SourceButton(addon.name) {
+                    vm.selectSource(SOURCE_STREMIO_PREFIX + addon.manifestUrl)
                 }
             }
 
-            // Nuvio
             state.installedNuvioProviders.forEach { provider ->
-                Button(
-                    onClick = {
-                        vm.selectSource(SOURCE_NUVIO_PREFIX + provider.id)
-                    }
-                ) {
-                    Text(provider.name)
+                SourceButton(provider.name) {
+                    vm.selectSource(SOURCE_NUVIO_PREFIX + provider.id)
                 }
             }
         }
@@ -167,9 +164,55 @@ private fun SourceSwitcher(
 }
 
 @Composable
+private fun SourceButton(
+    text: String,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.height(40.dp)
+    ) {
+        Text(text)
+    }
+}
+
+@Composable
 private fun SectionTitle(title: String) {
     Text(
         text = title,
+        style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(12.dp)
     )
+}
+
+@Composable
+fun MoviePosterCard(
+    movie: TmdbMovie,
+    onClick: (Long) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(120.dp)
+            .clickable { onClick(movie.id) }
+    ) {
+
+        AsyncImage(
+            model = movie.posterUrl ?: "https://via.placeholder.com/500x750",
+            contentDescription = movie.displayTitle,
+            modifier = Modifier
+                .height(180.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp)),
+            contentScale = ContentScale.Crop
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = movie.displayTitle,
+            maxLines = 2,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 2.dp)
+        )
+    }
 }
