@@ -1,102 +1,105 @@
 package com.aioweb.app.ui.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-
-import com.aioweb.app.ui.viewmodel.MoviesViewModel
 import com.aioweb.app.data.api.TmdbMovie
+import com.aioweb.app.ui.viewmodel.MoviesViewModel
 
 @Composable
-fun MoviesScreen() {
-    val context = LocalContext.current
-
-    val viewModel: MoviesViewModel = viewModel(
-        factory = MoviesViewModel.factory(context)
-    )
-
+fun MoviesScreen(
+    onMovieClick: (Long) -> Unit
+) {
+    val viewModel: MoviesViewModel = viewModel()
     val state by viewModel.state.collectAsState()
 
-    LaunchedEffect(Unit) {
-        viewModel.loadDiscover()
-    }
+    when {
+        state.loading -> {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+            }
+        }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp)
-    ) {
-
-        item {
+        state.error != null -> {
             Text(
-                text = "Movies",
-                style = MaterialTheme.typography.headlineMedium
+                text = state.error ?: "Unknown error",
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(16.dp)
             )
         }
 
-        item { Spacer(modifier = Modifier.height(12.dp)) }
+        else -> {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
 
-        // Trending
-        if (state.trending.isNotEmpty()) {
-            item { Text("Trending") }
+                // 🔥 Trending
+                item {
+                    SectionTitle("Trending")
+                }
+                items(state.trending) { movie ->
+                    MovieItem(movie, onMovieClick)
+                }
 
-            items(state.trending) { movie: TmdbMovie ->
-                MovieItem(movie)
-            }
-        }
+                // ⭐ Popular
+                item {
+                    SectionTitle("Popular")
+                }
+                items(state.popular) { movie ->
+                    MovieItem(movie, onMovieClick)
+                }
 
-        // Popular
-        if (state.popular.isNotEmpty()) {
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Popular")
-            }
+                // 🏆 Top Rated
+                item {
+                    SectionTitle("Top Rated")
+                }
+                items(state.topRated) { movie ->
+                    MovieItem(movie, onMovieClick)
+                }
 
-            items(state.popular) { movie: TmdbMovie ->
-                MovieItem(movie)
-            }
-        }
-
-        // Top Rated
-        if (state.topRated.isNotEmpty()) {
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Top Rated")
-            }
-
-            items(state.topRated) { movie: TmdbMovie ->
-                MovieItem(movie)
-            }
-        }
-
-        // Now Playing
-        if (state.nowPlaying.isNotEmpty()) {
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Now Playing")
-            }
-
-            items(state.nowPlaying) { movie: TmdbMovie ->
-                MovieItem(movie)
+                // 🎬 Now Playing
+                item {
+                    SectionTitle("Now Playing")
+                }
+                items(state.nowPlaying) { movie ->
+                    MovieItem(movie, onMovieClick)
+                }
             }
         }
     }
 }
 
 @Composable
-fun MovieItem(movie: TmdbMovie) {
-    Column(
+private fun SectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        modifier = Modifier.padding(16.dp)
+    )
+}
+
+@Composable
+private fun MovieItem(
+    movie: TmdbMovie,
+    onMovieClick: (Long) -> Unit
+) {
+    Text(
+        text = movie.displayTitle,
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-    ) {
-        Text(text = movie.displayTitle)
-        Text(text = movie.releaseDate ?: "")
-    }
+            .fillMaxSize()
+            .clickable { onMovieClick(movie.id) }
+            .padding(12.dp)
+    )
 }
