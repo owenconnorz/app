@@ -5,5 +5,5 @@ data class UiMovie(
     val title: String,
     val posterUrl: String,
     val backdropUrl: String,
-    val releaseDate: String,
+    val releaseDate: String
 )
