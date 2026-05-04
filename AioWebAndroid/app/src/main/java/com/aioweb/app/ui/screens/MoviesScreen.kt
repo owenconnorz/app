@@ -7,24 +7,30 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import androidx.lifecycle.viewmodel.compose.viewModel
+
 import com.aioweb.app.ui.viewmodel.MoviesViewModel
+import com.aioweb.app.ui.viewmodel.MoviesState
 import com.lagradost.cloudstream3.SearchResponse
 import com.aioweb.app.data.stremio.StremioMetaPreview
+import com.aioweb.app.data.api.TmdbMovie
 
 @Composable
 fun MoviesScreen(
     onMovieClick: (Long) -> Unit
 ) {
-    val vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(LocalContext.current))
+    val context = LocalContext.current
+    val vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(context))
     val state by vm.state.collectAsState()
 
     LaunchedEffect(Unit) {
         vm.loadDiscover()
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize()) {
 
         // 🔹 SOURCE SELECTOR
         LazyRow(
@@ -78,7 +84,7 @@ fun MoviesScreen(
 
 @Composable
 private fun TmdbContent(
-    state: com.aioweb.app.ui.viewmodel.MoviesState,
+    state: MoviesState,
     onMovieClick: (Long) -> Unit
 ) {
     LazyColumn {
@@ -102,7 +108,7 @@ private fun TmdbContent(
 //
 
 @Composable
-private fun PluginContent(state: com.aioweb.app.ui.viewmodel.MoviesState) {
+private fun PluginContent(state: MoviesState) {
 
     if (state.pluginLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -141,15 +147,13 @@ private fun PluginContent(state: com.aioweb.app.ui.viewmodel.MoviesState) {
 @Composable
 private fun PluginCard(item: SearchResponse) {
 
-    val poster = item.posterUrl ?: item.poster
+    val poster = item.posterUrl
 
     Column(
         modifier = Modifier
             .width(120.dp)
             .padding(8.dp)
-            .clickable {
-                // TODO: open plugin detail / load links
-            }
+            .clickable { /* TODO open links */ }
     ) {
         AsyncImage(
             model = poster,
@@ -171,7 +175,7 @@ private fun PluginCard(item: SearchResponse) {
 //
 
 @Composable
-private fun StremioContent(state: com.aioweb.app.ui.viewmodel.MoviesState) {
+private fun StremioContent(state: MoviesState) {
     LazyColumn {
         state.stremioSections.forEach { section ->
 
@@ -195,7 +199,7 @@ private fun StremioContent(state: com.aioweb.app.ui.viewmodel.MoviesState) {
 //
 
 @Composable
-private fun NuvioContent(state: com.aioweb.app.ui.viewmodel.MoviesState) {
+private fun NuvioContent(state: MoviesState) {
     LazyColumn {
         state.nuvioSections.forEach { section ->
 
@@ -265,8 +269,8 @@ private fun MovieCard(
 @Composable
 private fun Section(
     title: String,
-    items: List<com.aioweb.app.data.api.TmdbMovie>,
-    content: @Composable (com.aioweb.app.data.api.TmdbMovie) -> Unit
+    items: List<TmdbMovie>,
+    content: @Composable (TmdbMovie) -> Unit
 ) {
     Column {
         Text(title, modifier = Modifier.padding(8.dp))
