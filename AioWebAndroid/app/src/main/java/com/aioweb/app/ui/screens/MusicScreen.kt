@@ -156,7 +156,7 @@ fun MusicScreen(
 
                 // ── Library shortcuts ───────────────────────────────────────────
                 if (state.liked.isNotEmpty()) {
-                    item { SectionTitle("Liked songs") }
+                    item { MusicSectionTitle("Liked songs") }
                     items(state.liked.take(5), key = { "lib_liked_${it.url}" }) { entity ->
                         LibraryRow(entity, isPlaying = isPlaying && state.nowPlayingUrl == entity.url) {
                             val track = YtTrack(
@@ -171,7 +171,7 @@ fun MusicScreen(
                     }
                 }
                 if (state.recent.isNotEmpty()) {
-                    item { SectionTitle("Recently played") }
+                    item { MusicSectionTitle("Recently played") }
                     items(state.recent.take(8), key = { "lib_rec_${it.url}" }) { entity ->
                         LibraryRow(entity, isPlaying = isPlaying && state.nowPlayingUrl == entity.url) {
                             val track = YtTrack(
@@ -196,7 +196,7 @@ fun MusicScreen(
                             item(key = "yt_chips_$idx") { YtMoodChipRow(section.chips) }
                         }
                         is com.aioweb.app.data.ytmusic.HomeSection.PlaylistRail -> {
-                            item(key = "yt_prail_title_$idx") { SectionTitle(section.title) }
+                            item(key = "yt_prail_title_$idx") { MusicSectionTitle(section.title) }
                             item(key = "yt_prail_$idx") {
                                 LazyRow(
                                     contentPadding = PaddingValues(horizontal = 16.dp),
@@ -214,7 +214,7 @@ fun MusicScreen(
                             }
                         }
                         is com.aioweb.app.data.ytmusic.HomeSection.SongRail -> {
-                            item(key = "yt_srail_title_$idx") { SectionTitle(section.title) }
+                            item(key = "yt_srail_title_$idx") { MusicSectionTitle(section.title) }
                             item(key = "yt_srail_$idx") {
                                 LazyRow(
                                     contentPadding = PaddingValues(horizontal = 16.dp),
@@ -232,7 +232,7 @@ fun MusicScreen(
                 // Legacy fallback: NewPipe "Trending" feed — only shown when the YT
                 // home feed didn't surface anything (not signed in / fetch failed).
                 if (state.ytHome.sections.isEmpty() && state.homeFeed.isNotEmpty()) {
-                    item { SectionTitle("Trending today") }
+                    item { MusicSectionTitle("Trending today") }
                     item {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -308,7 +308,7 @@ fun MusicScreen(
                 val sections = state.sections
                 // Top result card (only in "All" mode and when we have one).
                 sections.topResult?.takeIf { state.searchMode == SearchMode.All }?.let { top ->
-                    item { SectionTitle("Top result") }
+                    item { MusicSectionTitle("Top result") }
                     item {
                         TopResultCard(
                             track = top,
@@ -323,7 +323,7 @@ fun MusicScreen(
                 }
                 // Songs section
                 if (sections.songs.isNotEmpty() && (state.searchMode == SearchMode.All || state.searchMode == SearchMode.Songs)) {
-                    item { SectionTitle(if (state.searchMode == SearchMode.All) "Songs" else "All songs") }
+                    item { MusicSectionTitle(if (state.searchMode == SearchMode.All) "Songs" else "All songs") }
                     items(sections.songs, key = { "song_${it.url}" }) { track ->
                         SongRow(
                             track = track,
@@ -340,7 +340,7 @@ fun MusicScreen(
                 }
                 // Videos section
                 if (sections.videos.isNotEmpty() && (state.searchMode == SearchMode.All || state.searchMode == SearchMode.Videos)) {
-                    item { SectionTitle("Videos") }
+                    item { MusicSectionTitle("Videos") }
                     items(sections.videos, key = { "vid_${it.url}" }) { track ->
                         SongRow(
                             track = track,
@@ -357,7 +357,7 @@ fun MusicScreen(
                 }
                 // Albums section
                 if (sections.albums.isNotEmpty() && (state.searchMode == SearchMode.All || state.searchMode == SearchMode.Albums)) {
-                    item { SectionTitle("Albums") }
+                    item { MusicSectionTitle("Albums") }
                     item {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -371,7 +371,7 @@ fun MusicScreen(
                 }
                 // Artists section
                 if (sections.artists.isNotEmpty() && (state.searchMode == SearchMode.All || state.searchMode == SearchMode.Artists)) {
-                    item { SectionTitle("Artists") }
+                    item { MusicSectionTitle("Artists") }
                     item {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -491,7 +491,7 @@ private fun MusicSearchField(query: String, loading: Boolean, onQueryChange: (St
 @Composable
 private fun SuggestionsRow(onPick: (String) -> Unit) {
     Column {
-        SectionTitle("Trending searches")
+        MusicSectionTitle("Trending searches")
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -517,7 +517,7 @@ private fun SuggestionChip(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SectionTitle(text: String) {
+private fun MusicSectionTitle(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.headlineSmall,
