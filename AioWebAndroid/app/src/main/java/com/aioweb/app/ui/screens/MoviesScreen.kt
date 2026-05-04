@@ -1,21 +1,17 @@
 package com.aioweb.app.ui.screens
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aioweb.app.data.api.TmdbMovie
-import com.aioweb.app.ui.viewmodel.MoviesViewModel
+import com.aioweb.app.ui.viewmodel.*
 
 @Composable
 fun MoviesScreen(
@@ -23,68 +19,147 @@ fun MoviesScreen(
 ) {
     val context = LocalContext.current
 
-    // ✅ FIX: use factory (prevents crash)
-    val viewModel: MoviesViewModel = viewModel(
+    val vm: MoviesViewModel = viewModel(
         factory = MoviesViewModel.factory(context)
     )
 
-    val state by viewModel.state.collectAsState()
+    val state by vm.state.collectAsState()
 
-    // ✅ FIX: trigger initial load
+    // Load once
     LaunchedEffect(Unit) {
-        viewModel.loadDiscover()
+        vm.loadDiscover()
     }
 
-    when {
-        state.loading -> {
-            Column(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.padding(16.dp)
-                )
+    Column(modifier = Modifier.fillMaxSize()) {
+
+        // 🔥 SOURCE SWITCHER
+        SourceSwitcher(state, vm)
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize()
+        ) {
+
+            // 🔥 TMDB CONTENT
+            if (state.selectedSourceId == SOURCE_BUILTIN) {
+                state.collections.forEach { row ->
+                    item {
+                        SectionTitle(row.title)
+                    }
+
+                    items(row.items) { movie ->
+                        Text(
+                            text = movie.displayTitle,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onMovieClick(movie.id) }
+                                .padding(12.dp)
+                        )
+                    }
+                }
+            }
+
+            // 🔥 PLUGIN CONTENT
+            if (state.isPluginActive) {
+                state.pluginSections.forEach { section ->
+                    item { SectionTitle(section.title) }
+
+                    items(section.items) { item ->
+                        Text(
+                            text = item.name ?: "Unknown",
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            }
+
+            // 🔥 STREMIO CONTENT
+            if (state.isStremioActive) {
+                state.stremioSections.forEach { section ->
+                    item { SectionTitle(section.title) }
+
+                    items(section.items) { item ->
+                        Text(
+                            text = item.name ?: "Unknown",
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            }
+
+            // 🔥 NUVIO CONTENT
+            if (state.isNuvioActive) {
+                state.nuvioSections.forEach { section ->
+                    item { SectionTitle(section.title) }
+
+                    items(section.items) { item ->
+                        Text(
+                            text = item.name ?: "Unknown",
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            }
+
+            // 🔥 LOADING / ERROR
+            item {
+                if (state.loading) {
+                    Text("Loading...", modifier = Modifier.padding(16.dp))
+                }
+
+                state.error?.let {
+                    Text("Error: $it", modifier = Modifier.padding(16.dp))
+                }
             }
         }
+    }
+}
 
-        state.error != null -> {
-            Text(
-                text = state.error ?: "Unknown error",
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(16.dp)
-            )
-        }
+@Composable
+private fun SourceSwitcher(
+    state: MoviesState,
+    vm: MoviesViewModel
+) {
+    Column(modifier = Modifier.padding(8.dp)) {
 
-        else -> {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize()
-            ) {
+        Text("Source: ${state.selectedSourceName}")
 
-                if (state.trending.isNotEmpty()) {
-                    item { SectionTitle("Trending") }
-                    items(state.trending) { movie ->
-                        MovieItem(movie, onMovieClick)
-                    }
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+
+            // TMDB
+            Button(onClick = { vm.selectSource(SOURCE_BUILTIN) }) {
+                Text("TMDB")
+            }
+
+            // Plugins
+            state.installedPlugins.forEach { plugin ->
+                Button(
+                    onClick = { vm.selectSource(plugin.internalName) }
+                ) {
+                    Text(plugin.name)
                 }
+            }
 
-                if (state.popular.isNotEmpty()) {
-                    item { SectionTitle("Popular") }
-                    items(state.popular) { movie ->
-                        MovieItem(movie, onMovieClick)
+            // Stremio
+            state.installedStremioAddons.forEach { addon ->
+                Button(
+                    onClick = {
+                        vm.selectSource(SOURCE_STREMIO_PREFIX + addon.manifestUrl)
                     }
+                ) {
+                    Text(addon.name)
                 }
+            }
 
-                if (state.topRated.isNotEmpty()) {
-                    item { SectionTitle("Top Rated") }
-                    items(state.topRated) { movie ->
-                        MovieItem(movie, onMovieClick)
+            // Nuvio
+            state.installedNuvioProviders.forEach { provider ->
+                Button(
+                    onClick = {
+                        vm.selectSource(SOURCE_NUVIO_PREFIX + provider.id)
                     }
-                }
-
-                if (state.nowPlaying.isNotEmpty()) {
-                    item { SectionTitle("Now Playing") }
-                    items(state.nowPlaying) { movie ->
-                        MovieItem(movie, onMovieClick)
-                    }
+                ) {
+                    Text(provider.name)
                 }
             }
         }
@@ -95,21 +170,6 @@ fun MoviesScreen(
 private fun SectionTitle(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleLarge,
-        modifier = Modifier.padding(16.dp)
-    )
-}
-
-@Composable
-private fun MovieItem(
-    movie: TmdbMovie,
-    onMovieClick: (Long) -> Unit
-) {
-    Text(
-        text = movie.displayTitle,
-        modifier = Modifier
-            .fillMaxSize()
-            .clickable { onMovieClick(movie.id) }
-            .padding(12.dp)
+        modifier = Modifier.padding(12.dp)
     )
 }
