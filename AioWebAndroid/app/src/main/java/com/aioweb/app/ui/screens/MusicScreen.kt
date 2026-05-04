@@ -1,5 +1,7 @@
 package com.aioweb.app.ui.screens
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -60,7 +62,6 @@ fun MusicScreen(
     val vm: MusicViewModel = viewModel(factory = MusicViewModel.factory(context))
     val state by vm.state.collectAsState()
     var query by remember { mutableStateOf("") }
-    val dlScope = rememberCoroutineScope()
 
     // The Player is now a MediaController bound to our foreground MusicPlaybackService.
     // This makes audio survive navigation AND auto-publishes the system notification.
