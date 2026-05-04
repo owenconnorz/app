@@ -1,8 +1,10 @@
 package com.aioweb.app.data.plugins
 
 import android.content.Context
+import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.plugins.Plugin
+import com.lagradost.cloudstream3.utils.ExtractorLink
 import dalvik.system.DexClassLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -10,58 +12,131 @@ import java.io.File
 
 object PluginRuntime {
 
+    private const val TAG = "PluginRuntime"
+
     private data class LoadedPlugin(
         val plugin: Plugin,
         val apis: List<MainAPI>
     )
 
     private val cache = mutableMapOf<String, LoadedPlugin>()
+    private val lastErrors = mutableMapOf<String, String>()
 
-    suspend fun load(context: Context, filePath: String): List<MainAPI> =
-        withContext(Dispatchers.IO) {
+    fun lastErrorFor(path: String): String? = lastErrors[path]
 
-            cache[filePath]?.let { return@withContext it.apis }
+    // ==============================
+    // LOAD PLUGIN
+    // ==============================
+    suspend fun load(
+        context: Context,
+        filePath: String
+    ): List<MainAPI> = withContext(Dispatchers.IO) {
 
-            val file = File(filePath)
+        cache[filePath]?.let { return@withContext it.apis }
 
-            val optimizedDir = File(context.codeCacheDir, "plugins").apply { mkdirs() }
+        try {
+            val src = File(filePath)
+            if (!src.exists()) {
+                error("Plugin file not found: $filePath")
+            }
+
+            // Android 14 fix: copy to read-only dir
+            val roDir = File(context.codeCacheDir, "plugins-ro").apply { mkdirs() }
+            val roFile = File(roDir, src.name)
+
+            if (!roFile.exists() || roFile.length() != src.length()) {
+                src.copyTo(roFile, overwrite = true)
+            }
+            roFile.setReadOnly()
+
+            val optDir = File(context.codeCacheDir, "plugins-opt").apply { mkdirs() }
 
             val loader = DexClassLoader(
-                file.absolutePath,
-                optimizedDir.absolutePath,
+                roFile.absolutePath,
+                optDir.absolutePath,
                 null,
                 context.classLoader
             )
 
-            val pluginClass = loader.loadClass("Plugin")
-            val plugin = pluginClass.getDeclaredConstructor().newInstance() as Plugin
+            // ⚠️ IMPORTANT: most plugins use full class name
+            val pluginClassName = findPluginClass(loader)
+                ?: error("No Plugin class found in $filePath")
+
+            val clazz = loader.loadClass(pluginClassName)
+
+            val plugin = clazz.getDeclaredConstructor().newInstance() as? Plugin
+                ?: error("Class is not Plugin")
 
             plugin.load(context)
 
             val apis = plugin.apis.toList()
 
             cache[filePath] = LoadedPlugin(plugin, apis)
+            lastErrors.remove(filePath)
 
             return@withContext apis
-        }
 
+        } catch (e: Throwable) {
+            Log.e(TAG, "Plugin load failed", e)
+            lastErrors[filePath] = "${e::class.simpleName}: ${e.message}"
+            return@withContext emptyList()
+        }
+    }
+
+    // ==============================
+    // FIND PLUGIN CLASS (SAFE)
+    // ==============================
+    private fun findPluginClass(loader: DexClassLoader): String? {
+        return try {
+            val dex = dalvik.system.DexFile(loader.toString())
+            val entries = dex.entries()
+
+            while (entries.hasMoreElements()) {
+                val name = entries.nextElement()
+
+                val clazz = runCatching { loader.loadClass(name) }.getOrNull() ?: continue
+
+                if (Plugin::class.java.isAssignableFrom(clazz)
+                    && !clazz.isInterface
+                    && !java.lang.reflect.Modifier.isAbstract(clazz.modifiers)
+                ) {
+                    return name
+                }
+            }
+
+            null
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    // ==============================
+    // HOME
+    // ==============================
     suspend fun home(
         context: Context,
         filePath: String
     ): List<Pair<String, List<SearchResponse>>> {
 
         val apis = load(context, filePath)
-
         val result = mutableListOf<Pair<String, List<SearchResponse>>>()
 
         apis.forEach { api ->
-            api.mainPage.forEach { req ->
-                val page = api.getMainPage(1, req)
+            val requests = if (api.mainPage.isNotEmpty()) api.mainPage
+            else listOf(MainPageRequest(api.name, ""))
 
-                page?.items?.forEach {
-                    if (it.list.isNotEmpty()) {
-                        result += it.name to it.list
+            requests.forEach { req ->
+                try {
+                    val page = api.getMainPage(1, req)
+
+                    page?.items?.forEach { section ->
+                        if (section.list.isNotEmpty()) {
+                            result += section.name to section.list
+                        }
                     }
+
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Home error: ${api.name}", e)
                 }
             }
         }
@@ -69,6 +144,9 @@ object PluginRuntime {
         return result
     }
 
+    // ==============================
+    // SEARCH
+    // ==============================
     suspend fun search(
         context: Context,
         filePath: String,
@@ -82,11 +160,14 @@ object PluginRuntime {
         }
     }
 
+    // ==============================
+    // LOAD LINKS (STREAMS)
+    // ==============================
     suspend fun loadLinks(
         context: Context,
         filePath: String,
         url: String,
-        onLink: (com.lagradost.cloudstream3.utils.ExtractorLink) -> Unit
+        onLink: (ExtractorLink) -> Unit
     ) {
 
         val apis = load(context, filePath)
@@ -99,10 +180,22 @@ object PluginRuntime {
                     data = load.url ?: return@forEach,
                     isCasting = false,
                     subtitleCallback = {},
-                    callback = { link -> onLink(link) }
+                    callback = { link ->
+                        onLink(link)
+                    }
                 )
-            } catch (_: Throwable) {
+
+            } catch (e: Throwable) {
+                Log.e(TAG, "loadLinks error: ${api.name}", e)
             }
         }
+    }
+
+    // ==============================
+    // CLEAR CACHE
+    // ==============================
+    fun clear(path: String) {
+        cache.remove(path)
+        lastErrors.remove(path)
     }
 }
