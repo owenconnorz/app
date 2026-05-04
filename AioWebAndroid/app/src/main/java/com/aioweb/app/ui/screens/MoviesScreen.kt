@@ -1,124 +1,102 @@
 package com.aioweb.app.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 
-import com.aioweb.app.data.model.UiMovie
-import com.aioweb.app.data.model.toUiMovie
-import com.aioweb.app.ui.components.PosterGrid
+import com.aioweb.app.ui.viewmodel.MoviesViewModel
+import com.aioweb.app.data.api.TmdbMovie
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MoviesScreen(onMovieClick: (Long) -> Unit) {
-
+fun MoviesScreen() {
     val context = LocalContext.current
-    val vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(context))
-    val state by vm.state.collectAsState()
 
-    var query by remember { mutableStateOf("") }
+    val viewModel: MoviesViewModel = viewModel(
+        factory = MoviesViewModel.factory(context)
+    )
 
-    val mergedMovies = remember(state) {
-        buildList<UiMovie> {
+    val state by viewModel.state.collectAsState()
 
-            // ✅ TMDB
-            state.collections.forEach { row ->
-                addAll(row.items.map { it.toUiMovie() })
-            }
-
-            // ✅ Stremio
-            state.stremioSections.forEach { section ->
-                section.items.forEach { item ->
-                    add(
-                        UiMovie(
-                            id = item.id.hashCode().toLong(),
-                            title = item.name,
-                            posterUrl = item.poster ?: "",
-                            backdropUrl = item.poster ?: "",
-                            releaseDate = item.releaseInfo ?: ""
-                        )
-                    )
-                }
-            }
-
-            // ✅ Nuvio
-            state.nuvioSections.forEach { section ->
-                section.items.forEach { item ->
-                    add(
-                        UiMovie(
-                            id = item.id.hashCode().toLong(),
-                            title = item.name,
-                            posterUrl = item.poster ?: "",
-                            backdropUrl = item.poster ?: "",
-                            releaseDate = item.releaseInfo ?: ""
-                        )
-                    )
-                }
-            }
-
-            // ✅ Plugins
-            state.pluginSections.forEach { section ->
-                section.items.forEach { item ->
-                    add(
-                        UiMovie(
-                            id = item.url.hashCode().toLong(),
-                            title = item.name,
-                            posterUrl = item.posterUrl ?: "",
-                            backdropUrl = item.posterUrl ?: "",
-                            releaseDate = ""
-                        )
-                    )
-                }
-            }
-        }.distinctBy { it.id }
+    LaunchedEffect(Unit) {
+        viewModel.loadDiscover()
     }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp)
     ) {
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 16.dp)
-        ) {
 
-            item {
-                MoviesHeader()
-            }
+        item {
+            Text(
+                text = "Movies",
+                style = MaterialTheme.typography.headlineMedium
+            )
+        }
 
-            item {
-                MoviesSearchField(
-                    query = query,
-                    loading = state.loading,
-                    onQueryChange = {
-                        query = it
-                        vm.search(it)
-                    }
-                )
-            }
+        item { Spacer(modifier = Modifier.height(12.dp)) }
 
-            item {
-                SectionTitle("🔥 Trending")
-            }
+        // Trending
+        if (state.trending.isNotEmpty()) {
+            item { Text("Trending") }
 
-            item {
-                PosterGrid(
-                    movies = if (query.isBlank())
-                        mergedMovies
-                    else
-                        state.searchResults.map { it.toUiMovie() },
-
-                    onClick = onMovieClick
-                )
+            items(state.trending) { movie: TmdbMovie ->
+                MovieItem(movie)
             }
         }
+
+        // Popular
+        if (state.popular.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Popular")
+            }
+
+            items(state.popular) { movie: TmdbMovie ->
+                MovieItem(movie)
+            }
+        }
+
+        // Top Rated
+        if (state.topRated.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Top Rated")
+            }
+
+            items(state.topRated) { movie: TmdbMovie ->
+                MovieItem(movie)
+            }
+        }
+
+        // Now Playing
+        if (state.nowPlaying.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Now Playing")
+            }
+
+            items(state.nowPlaying) { movie: TmdbMovie ->
+                MovieItem(movie)
+            }
+        }
+    }
+}
+
+@Composable
+fun MovieItem(movie: TmdbMovie) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+    ) {
+        Text(text = movie.displayTitle)
+        Text(text = movie.releaseDate ?: "")
     }
 }
