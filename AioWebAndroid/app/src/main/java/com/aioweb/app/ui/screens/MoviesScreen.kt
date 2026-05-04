@@ -1,4 +1,3 @@
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoviesScreen(onMovieClick: (Long) -> Unit) {
     val context = LocalContext.current
@@ -7,21 +6,18 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
 
     var query by remember { mutableStateOf("") }
 
-    // 🔥 MERGE EVERYTHING INTO ONE LIST
     val mergedMovies = remember(state) {
         buildList {
 
-            // Built-in (TMDB)
             state.collections.forEach { row ->
                 addAll(row.items)
             }
 
-            // Stremio
             state.stremioSections.forEach { section ->
                 section.items.forEach {
                     add(
                         TmdbMovie(
-                            id = it.id.hashCode().toLong(),
+                            id = "stremio_${it.id}".hashCode().toLong(),
                             title = it.name,
                             posterUrl = it.poster ?: "",
                             backdropUrl = it.poster ?: "",
@@ -32,12 +28,11 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                 }
             }
 
-            // Nuvio
             state.nuvioSections.forEach { section ->
                 section.items.forEach {
                     add(
                         TmdbMovie(
-                            id = it.id.hashCode().toLong(),
+                            id = "nuvio_${it.id}".hashCode().toLong(),
                             title = it.name,
                             posterUrl = it.poster ?: "",
                             backdropUrl = it.poster ?: "",
@@ -48,12 +43,11 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                 }
             }
 
-            // Plugins (CloudStream)
             state.pluginSections.forEach { section ->
                 section.items.forEach {
                     add(
                         TmdbMovie(
-                            id = it.url.hashCode().toLong(),
+                            id = "plugin_${it.url}".hashCode().toLong(),
                             title = it.name,
                             posterUrl = it.posterUrl ?: "",
                             backdropUrl = it.posterUrl ?: "",
@@ -63,8 +57,7 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                     )
                 }
             }
-        }
-            .distinctBy { it.id }
+        }.distinctBy { it.id }
     }
 
     Box(
@@ -90,16 +83,31 @@ fun MoviesScreen(onMovieClick: (Long) -> Unit) {
                 )
             }
 
-            // 🔥 SINGLE SECTION ONLY
-            item {
-                SectionTitle("🔥 Trending")
-            }
+            item { SectionTitle("🔥 Trending") }
 
             item {
-                PosterGrid(
-                    movies = if (query.isBlank()) mergedMovies else state.searchResults,
-                    onClick = onMovieClick
-                )
+                when {
+                    state.loading -> {
+                        Box(Modifier.fillMaxWidth().padding(24.dp)) {
+                            CircularProgressIndicator(Modifier.align(Alignment.Center))
+                        }
+                    }
+
+                    mergedMovies.isEmpty() -> {
+                        Text(
+                            "No content loaded",
+                            modifier = Modifier.padding(20.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    else -> {
+                        PosterGrid(
+                            movies = if (query.isBlank()) mergedMovies else state.searchResults,
+                            onClick = onMovieClick
+                        )
+                    }
+                }
             }
         }
     }
