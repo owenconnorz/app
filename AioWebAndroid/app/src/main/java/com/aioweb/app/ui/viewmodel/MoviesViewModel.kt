@@ -4,46 +4,35 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-
 import com.aioweb.app.data.ServiceLocator
 import com.aioweb.app.data.api.TmdbMovie
-import com.aioweb.app.data.library.LibraryDb
-import com.aioweb.app.data.library.WatchProgressEntity
-import com.aioweb.app.data.plugins.InstalledPlugin
-import com.aioweb.app.data.plugins.PluginRepository
-import com.aioweb.app.data.plugins.PluginRuntime
-import com.aioweb.app.data.stremio.InstalledStremioAddon
-import com.aioweb.app.data.stremio.StremioMetaPreview
-import com.aioweb.app.data.stremio.StremioRepository
+import com.aioweb.app.data.collections.*
+import com.aioweb.app.data.library.*
+import com.aioweb.app.data.plugins.*
+import com.aioweb.app.data.stremio.*
 import com.lagradost.cloudstream3.SearchResponse
-
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
-data class PluginSection(
-    val title: String,
-    val items: List<SearchResponse>,
-)
-
-data class StremioSection(
-    val title: String,
-    val addonName: String,
-    val items: List<StremioMetaPreview>,
-)
+const val SOURCE_BUILTIN = "builtin"
+const val SOURCE_STREMIO_PREFIX = "stremio_"
 
 data class MoviesState(
     val trending: List<TmdbMovie> = emptyList(),
+    val collections: List<CollectionRow> = emptyList(),
     val heroBanner: List<TmdbMovie> = emptyList(),
-    val continueWatching: List<WatchProgressEntity> = emptyList(),
-
-    val pluginSections: List<PluginSection> = emptyList(),
-    val stremioSections: List<StremioSection> = emptyList(),
-
+    val searchResults: List<TmdbMovie> = emptyList(),
     val installedPlugins: List<InstalledPlugin> = emptyList(),
     val installedStremioAddons: List<InstalledStremioAddon> = emptyList(),
-
-    val selectedSourceId: String = "builtin"
+    val pluginSections: List<PluginSection> = emptyList(),
+    val stremioSections: List<StremioSection> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null,
 )
+
+data class PluginSection(val title: String, val items: List<SearchResponse>)
+data class StremioSection(val title: String, val items: List<StremioMetaPreview>)
+data class CollectionRow(val id: String, val title: String, val emoji: String, val items: List<TmdbMovie>)
 
 class MoviesViewModel(
     private val sl: ServiceLocator,
@@ -56,125 +45,63 @@ class MoviesViewModel(
     val state: StateFlow<MoviesState> = _state
 
     init {
-        loadTMDB()
-        observePlugins()
-        observeStremio()
-        observeContinueWatching()
+        viewModelScope.launch {
+            pluginRepo.installed.collect {
+                _state.update { s -> s.copy(installedPlugins = it) }
+                loadPlugins()
+            }
+        }
+
+        viewModelScope.launch {
+            stremioRepo.addons.collect {
+                _state.update { s -> s.copy(installedStremioAddons = it) }
+                loadStremio()
+            }
+        }
     }
 
-    private fun loadTMDB() {
+    fun loadDiscover() {
         viewModelScope.launch {
-            val key = sl.tmdbApiKey
-
-            val trending = runCatching {
-                sl.tmdb.trending(key).results
-            }.getOrDefault(emptyList())
-
+            val movies = sl.tmdb.trending(sl.tmdbApiKey).results
             _state.update {
                 it.copy(
-                    trending = trending,
-                    heroBanner = trending.take(5)
+                    trending = movies,
+                    heroBanner = movies.take(5)
                 )
             }
         }
     }
 
-    private fun observePlugins() {
+    private fun loadPlugins() {
         viewModelScope.launch {
-            pluginRepo.installed.collect { plugins ->
-                _state.update { it.copy(installedPlugins = plugins) }
-
-                if (plugins.isNotEmpty()) {
-                    loadPluginHome(plugins.first().internalName)
-                }
+            val sections = _state.value.installedPlugins.mapNotNull {
+                val res = PluginRuntime.home(context, it.filePath)
+                if (res.isEmpty()) null else PluginSection(it.name, res.flatten())
             }
+            _state.update { it.copy(pluginSections = sections) }
         }
     }
 
-    fun loadPluginHome(pluginId: String) {
-        val plugin = _state.value.installedPlugins
-            .firstOrNull { it.internalName == pluginId }
-            ?: return
-
+    private fun loadStremio() {
         viewModelScope.launch {
-            val sections = runCatching {
-                PluginRuntime.home(context, plugin.filePath)
-            }.getOrDefault(emptyList())
-
-            _state.update {
-                it.copy(
-                    pluginSections = sections.map { (name, items) ->
-                        PluginSection(name, items)
-                    },
-                    selectedSourceId = pluginId
-                )
+            val sections = _state.value.installedStremioAddons.mapNotNull {
+                val items = stremioRepo.fetchCatalog(it, "movie", "top")
+                if (items.isEmpty()) null else StremioSection(it.name, items)
             }
+            _state.update { it.copy(stremioSections = sections) }
         }
     }
 
-    private fun observeStremio() {
+    fun search(query: String) {
         viewModelScope.launch {
-            stremioRepo.addons.collect { addons ->
-
-                val sections = mutableListOf<StremioSection>()
-
-                for (addon in addons) {
-                    val manifest = runCatching {
-                        stremioRepo.fetchManifest(addon.manifestUrl)
-                    }.getOrNull() ?: continue
-
-                    for (cat in manifest.catalogs) {
-                        val items = runCatching {
-                            stremioRepo.fetchCatalog(addon, cat.type, cat.id)
-                        }.getOrDefault(emptyList())
-
-                        if (items.isNotEmpty()) {
-                            sections.add(
-                                StremioSection(
-                                    title = cat.name ?: cat.id,
-                                    addonName = addon.name,
-                                    items = items
-                                )
-                            )
-                        }
-                    }
-                }
-
-                _state.update { it.copy(stremioSections = sections) }
-            }
-        }
-    }
-
-    // 🔥 REQUIRED FOR CLICK TO WORK
-    suspend fun getStremioStreams(
-        addon: InstalledStremioAddon,
-        item: StremioMetaPreview
-    ) = stremioRepo.fetchStreams(
-        addon = addon,
-        type = item.type,
-        id = item.id
-    )
-
-    private fun observeContinueWatching() {
-        viewModelScope.launch {
-            LibraryDb.get(context).watchProgress().continueWatching().collect {
-                _state.update { s -> s.copy(continueWatching = it) }
-            }
-        }
-    }
-
-    fun setSource(source: String) {
-        if (source == "builtin") {
-            loadTMDB()
-        } else {
-            loadPluginHome(source)
+            val res = sl.tmdb.search(sl.tmdbApiKey, query).results
+            _state.update { it.copy(searchResults = res) }
         }
     }
 
     companion object {
         fun factory(context: Context) = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                @Suppress("UNCHECKED_CAST")
                 return MoviesViewModel(
                     ServiceLocator.get(context),
                     PluginRepository(context),
