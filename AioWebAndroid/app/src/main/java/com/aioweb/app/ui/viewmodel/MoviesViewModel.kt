@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.aioweb.app.data.ServiceLocator
 import com.aioweb.app.data.api.TmdbMovie
+import com.aioweb.app.data.collections.HomeCollection
 import com.aioweb.app.data.collections.HomeCollections
 import com.aioweb.app.data.library.LibraryDb
 import com.aioweb.app.data.library.WatchProgressEntity
@@ -21,12 +22,19 @@ import kotlinx.coroutines.flow.*
 
 data class PluginSection(
     val title: String,
-    val items: List<SearchResponse>
+    val items: List<SearchResponse>,
 )
 
 data class StremioSection(
     val title: String,
-    val items: List<StremioMetaPreview>
+    val items: List<StremioMetaPreview>,
+)
+
+data class CollectionRow(
+    val id: String,
+    val title: String,
+    val emoji: String,
+    val items: List<TmdbMovie>,
 )
 
 data class MoviesState(
@@ -39,14 +47,16 @@ data class MoviesState(
     val stremioSections: List<StremioSection> = emptyList(),
 
     val installedPlugins: List<InstalledPlugin> = emptyList(),
-    val installedStremioAddons: List<InstalledStremioAddon> = emptyList()
+    val installedStremioAddons: List<InstalledStremioAddon> = emptyList(),
+
+    val loading: Boolean = false,
 )
 
 class MoviesViewModel(
     private val sl: ServiceLocator,
     private val pluginRepo: PluginRepository,
     private val stremioRepo: StremioRepository,
-    private val context: Context
+    private val context: Context,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MoviesState())
@@ -75,7 +85,8 @@ class MoviesViewModel(
                 it.copy(
                     trending = rows["trending"] ?: emptyList(),
                     popular = rows["popular"] ?: emptyList(),
-                    heroBanner = (rows["trending"] ?: emptyList()).take(5)
+                    heroBanner = (rows["trending"] ?: emptyList()).take(5),
+                    loading = false
                 )
             }
         }
@@ -83,8 +94,13 @@ class MoviesViewModel(
 
     private fun observePlugins() {
         viewModelScope.launch {
-            pluginRepo.installed.collect {
-                _state.update { s -> s.copy(installedPlugins = it) }
+            pluginRepo.installed.collect { plugins ->
+                _state.update { it.copy(installedPlugins = plugins) }
+
+                // auto load first plugin
+                if (plugins.isNotEmpty()) {
+                    loadPluginHome(plugins.first().internalName)
+                }
             }
         }
     }
@@ -146,6 +162,14 @@ class MoviesViewModel(
                     }
                 )
             }
+        }
+    }
+
+    fun setSource(source: String) {
+        if (source == "tmdb") {
+            loadTMDB()
+        } else {
+            loadPluginHome(source)
         }
     }
 
