@@ -17,7 +17,6 @@ data class PlayerSource(
     val qualityTag: String?,
     val isMagnet: Boolean = false,
 ) {
-
     companion object {
 
         fun createPlayer(
@@ -33,9 +32,7 @@ data class PlayerSource(
                     "Origin" to "https://www.eporner.com",
                     "Accept" to "*/*",
                 ) + extraHeaders
-            } else {
-                extraHeaders
-            }
+            } else extraHeaders
 
             val dataSourceFactory: DataSource.Factory =
                 PlayerPlaybackNetworking.createDataSourceFactory(
