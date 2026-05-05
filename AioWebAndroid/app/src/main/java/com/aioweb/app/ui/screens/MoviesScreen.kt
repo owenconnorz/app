@@ -6,13 +6,13 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.aioweb.app.ui.viewmodel.MoviesViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
-
-import com.aioweb.app.ui.viewmodel.MoviesViewModel
 import com.aioweb.app.data.plugins.PluginRuntime
 import com.aioweb.app.player.MoviePlayerSession
 import com.aioweb.app.player.PlayerSource
@@ -36,7 +36,9 @@ fun MoviesScreen(
 
     Column {
 
-        // 🔍 SEARCH
+        // =========================
+        // 🔍 SEARCH BAR
+        // =========================
         OutlinedTextField(
             value = search,
             onValueChange = {
@@ -49,9 +51,13 @@ fun MoviesScreen(
             label = { Text("Search...") }
         )
 
+        // =========================
         // 🔁 SOURCE SWITCH
+        // =========================
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
 
@@ -74,127 +80,112 @@ fun MoviesScreen(
             )
         }
 
-        LazyColumn {
+        // =========================
+        // 🎬 CONTENT
+        // =========================
+        LazyColumn(
+            modifier = Modifier.fillMaxSize()
+        ) {
 
             // =========================
-            // 🎬 TMDB (RESTORED GRID STYLE)
+            // TMDB (FIXED POSTERS)
             // =========================
-            if (!state.isPluginActive && !state.isStremioActive && !state.isNuvioActive) {
+            if (!state.isPluginActive && !state.isStremioActive) {
 
                 item { SectionTitle("🔥 Trending This Week") }
 
-                item {
-                    LazyRow {
-                        items(state.trending) { movie ->
-                            PosterCard(
-                                title = movie.title ?: "Unknown",
-                                poster = movie.posterPath,
-                                onClick = { onMovieClick(movie.id) }
-                            )
-                        }
-                    }
-                }
+                items(state.trending) { movie ->
 
-                item { SectionTitle("⭐ Popular") }
-
-                item {
-                    LazyRow {
-                        items(state.popular) { movie ->
-                            PosterCard(
-                                title = movie.title ?: "Unknown",
-                                poster = movie.posterPath,
-                                onClick = { onMovieClick(movie.id) }
-                            )
-                        }
+                    val posterUrl = movie.posterPath?.let {
+                        "https://image.tmdb.org/t/p/w500$it"
                     }
+
+                    MovieCard(
+                        title = movie.title ?: "Unknown",
+                        poster = posterUrl,
+                        onClick = { onMovieClick(movie.id) }
+                    )
                 }
             }
 
             // =========================
-            // 🔌 PLUGINS
+            // PLUGINS
             // =========================
             if (state.isPluginActive) {
                 state.pluginSections.forEach { section ->
 
                     item { SectionTitle(section.title ?: "Plugins") }
 
-                    item {
-                        LazyRow {
-                            items(section.items) { item ->
+                    items(section.items) { item ->
 
-                                PosterCard(
-                                    title = item.name ?: "Unknown",
-                                    poster = item.posterUrl,
-                                    onClick = {
+                        MovieCard(
+                            title = item.name ?: "Unknown",
+                            poster = item.posterUrl,
+                            onClick = {
 
-                                        val plugin = state.installedPlugins
-                                            .firstOrNull { it.internalName == state.selectedSourceId }
-                                            ?: return@PosterCard
+                                val plugin = state.installedPlugins
+                                    .firstOrNull { it.internalName == state.selectedSourceId }
+                                    ?: return@MovieCard
 
-                                        scope.launch {
+                                scope.launch {
 
-                                            val sources = mutableListOf<PlayerSource>()
+                                    val sources = mutableListOf<PlayerSource>()
 
-                                            PluginRuntime.loadLinks(
-                                                context = context,
-                                                filePath = plugin.filePath,
-                                                url = item.url
-                                            ) { link ->
+                                    PluginRuntime.loadLinks(
+                                        context = context,
+                                        filePath = plugin.filePath,
+                                        url = item.url
+                                    ) { link ->
 
-                                                if (link.url.isNullOrEmpty()) return@loadLinks
+                                        if (link.url.isNullOrEmpty()) return@loadLinks
 
-                                                sources.add(
-                                                    PlayerSource(
-                                                        id = "${link.name}_${link.quality}",
-                                                        url = link.url,
-                                                        label = link.name ?: "Stream",
-                                                        addonName = link.name ?: "Unknown",
-                                                        qualityTag = link.quality?.toString() ?: "Auto",
-                                                        isMagnet = link.url.startsWith("magnet")
-                                                    )
-                                                )
-                                            }
-
-                                            if (sources.isNotEmpty()) {
-                                                MoviePlayerSession.set(
-                                                    newSources = sources,
-                                                    progressKey = WatchProgressKey(
-                                                        title = item.name ?: "plugin"
-                                                    )
-                                                )
-
-                                                val first = sources.first()
-
-                                                onPlayStream(first.url, item.name ?: "Stream")
-                                            }
-                                        }
+                                        sources.add(
+                                            PlayerSource(
+                                                id = "${link.name}_${link.quality}",
+                                                url = link.url,
+                                                label = link.name ?: "Stream",
+                                                addonName = link.name ?: "Unknown",
+                                                qualityTag = link.quality?.toString() ?: "Auto",
+                                                isMagnet = link.url.startsWith("magnet")
+                                            )
+                                        )
                                     }
-                                )
+
+                                    if (sources.isNotEmpty()) {
+                                        MoviePlayerSession.set(
+                                            newSources = sources,
+                                            progressKey = WatchProgressKey(
+                                                title = item.name ?: "plugin"
+                                            )
+                                        )
+
+                                        val first = sources.first()
+
+                                        onPlayStream(
+                                            first.url,
+                                            item.name ?: "Stream"
+                                        )
+                                    }
+                                }
                             }
-                        }
+                        )
                     }
                 }
             }
 
             // =========================
-            // 📺 STREMIO (AUTO HOME)
+            // STREMIO
             // =========================
             if (state.isStremioActive) {
-
                 state.stremioSections.forEach { section ->
-
                     item { SectionTitle(section.title ?: "Stremio") }
 
-                    item {
-                        LazyRow {
-                            items(section.items) { item ->
-                                PosterCard(
-                                    title = item.name ?: "Unknown",
-                                    poster = item.poster,
-                                    onClick = {}
-                                )
-                            }
-                        }
+                    items(section.items) { item ->
+                        MovieCard(
+                            title = item.name ?: "Unknown",
+                            poster = item.poster,
+                            onClick = {}
+                        )
                     }
                 }
             }
@@ -203,32 +194,32 @@ fun MoviesScreen(
 }
 
 @Composable
-fun PosterCard(
+fun MovieCard(
     title: String,
     poster: String?,
     onClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
-            .width(130.dp)
-            .padding(8.dp)
+            .fillMaxWidth()
             .clickable { onClick() }
+            .padding(8.dp)
     ) {
 
         AsyncImage(
             model = poster ?: "",
             contentDescription = null,
             modifier = Modifier
-                .height(180.dp)
                 .fillMaxWidth()
+                .height(180.dp),
+            contentScale = ContentScale.Crop
         )
 
-        Spacer(Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Text(
             text = title,
-            maxLines = 2,
-            style = MaterialTheme.typography.bodySmall
+            style = MaterialTheme.typography.bodyLarge
         )
     }
 }
