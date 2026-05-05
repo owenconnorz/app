@@ -8,7 +8,10 @@ object MoviePlayerSession {
     var progressKey: WatchProgressKey? = null
         private set
 
-    fun set(newSources: List<PlayerSource>, progressKey: WatchProgressKey? = null) {
+    fun set(
+        newSources: List<PlayerSource>,
+        progressKey: WatchProgressKey? = null
+    ) {
         sources = newSources
         this.progressKey = progressKey
     }
@@ -21,7 +24,7 @@ object MoviePlayerSession {
 
 data class WatchProgressKey(
     val tmdbId: Long? = null,
-    val title: String,
+    val title: String = "Unknown",
     val posterUrl: String? = null,
     val mediaType: String = "movie"
 )
