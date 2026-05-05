@@ -7,111 +7,147 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
-
-import coil.compose.AsyncImage
-
 import androidx.lifecycle.viewmodel.compose.viewModel
-
-import kotlinx.coroutines.launch
-
 import com.aioweb.app.ui.viewmodel.MoviesViewModel
-import com.aioweb.app.player.PlayerSource
-import com.aioweb.app.player.MoviePlayerSession
-import com.aioweb.app.player.WatchProgressKey
+import com.aioweb.app.ui.viewmodel.MoviesState
+import com.lagradost.cloudstream3.SearchResponse
 
 @Composable
 fun MoviesScreen(
     onMovieClick: (Long) -> Unit,
-    onPlayStream: (String, String) -> Unit
+    onPlayStream: (String, String) -> Unit,
+    vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(LocalContext.current))
 ) {
-    val context = LocalContext.current
-    val vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(context))
     val state by vm.state.collectAsState()
-    val scope = rememberCoroutineScope()
 
-    LazyColumn {
+    LaunchedEffect(Unit) {
+        vm.loadDiscover()
+    }
 
-        // =========================
-        // STREMIO CONTENT (FIXED)
-        // =========================
+    LazyColumn(
+        modifier = Modifier.fillMaxSize()
+    ) {
+
+        // HERO BANNER
+        item {
+            HeroBanner(state.heroBanner, onMovieClick)
+        }
+
+        // TRENDING
+        item {
+            SectionTitle("Trending")
+        }
+
+        item {
+            HorizontalMovieRow(state.trending, onMovieClick)
+        }
+
+        // STREMIO
         state.stremioSections.forEach { section ->
+            item { SectionTitle(section.title) }
 
             item {
-                Text(
-                    text = section.title,
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(8.dp)
-                )
-            }
-
-            items(section.items) { item ->
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-
-                            val addon = state.installedStremioAddons
-                                .firstOrNull { it.name == section.addonName }
-                                ?: return@clickable
-
-                            scope.launch {
-
-                                val sources = mutableListOf<PlayerSource>()
-
-                                val streams = vm.getStremioStreams(addon, item)
-
-                                streams.forEach { stream ->
-                                    val url = stream.url ?: return@forEach
-
-                                    sources.add(
-                                        PlayerSource(
-                                            id = url,
-                                            url = url,
-                                            label = stream.title ?: "Stream",
-                                            addonName = addon.name,
-                                            qualityTag = stream.title ?: "Auto",
-                                            isMagnet = url.startsWith("magnet")
-                                        )
-                                    )
-                                }
-
-                                if (sources.isNotEmpty()) {
-
-                                    MoviePlayerSession.set(
-                                        newSources = sources,
-                                        progressKey = WatchProgressKey(
-                                            title = item.name ?: "stremio",
-                                            posterUrl = item.poster
-                                        )
-                                    )
-
-                                    val first = sources.first()
-
-                                    onPlayStream(
-                                        first.url,
-                                        item.name ?: "Stream"
-                                    )
-                                }
+                LazyRow {
+                    items(section.items) { item ->
+                        MovieCard(
+                            title = item.name ?: "Unknown",
+                            onClick = {
+                                // fallback → just open details
+                                item.id?.toLongOrNull()?.let(onMovieClick)
                             }
-                        }
-                        .padding(8.dp)
-                ) {
+                        )
+                    }
+                }
+            }
+        }
 
-                    AsyncImage(
-                        model = item.poster,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .width(100.dp)
-                            .height(150.dp)
-                    )
+        // PLUGINS
+        state.pluginSections.forEach { section ->
+            item { SectionTitle(section.title) }
 
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Text(item.name ?: "Unknown")
+            item {
+                LazyRow {
+                    items(section.items) { item: SearchResponse ->
+                        MovieCard(
+                            title = item.name ?: "Unknown",
+                            onClick = {
+                                val url = item.url ?: return@MovieCard
+                                val title = item.name ?: "Stream"
+                                onPlayStream(url, title)
+                            }
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun HeroBanner(
+    items: List<com.aioweb.app.data.api.TmdbMovie>,
+    onClick: (Long) -> Unit
+) {
+    if (items.isEmpty()) return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+    ) {
+        Text("Featured", style = MaterialTheme.typography.titleLarge)
+
+        Spacer(Modifier.height(8.dp))
+
+        items.take(5).forEach {
+            Text(
+                text = it.title,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onClick(it.id) }
+                    .padding(8.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun HorizontalMovieRow(
+    movies: List<com.aioweb.app.data.api.TmdbMovie>,
+    onClick: (Long) -> Unit
+) {
+    LazyRow {
+        items(movies) {
+            MovieCard(
+                title = it.title,
+                onClick = { onClick(it.id) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun MovieCard(
+    title: String,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .padding(8.dp)
+            .width(140.dp)
+            .clickable { onClick() }
+    ) {
+        Box(modifier = Modifier.padding(16.dp)) {
+            Text(title)
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(16.dp)
+    )
 }
