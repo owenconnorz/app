@@ -4,17 +4,19 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+
 import com.aioweb.app.data.ServiceLocator
 import com.aioweb.app.data.api.TmdbMovie
-import com.aioweb.app.data.collections.HomeCollection
-import com.aioweb.app.data.collections.HomeCollections
 import com.aioweb.app.data.library.LibraryDb
 import com.aioweb.app.data.library.WatchProgressEntity
 import com.aioweb.app.data.plugins.InstalledPlugin
 import com.aioweb.app.data.plugins.PluginRepository
 import com.aioweb.app.data.plugins.PluginRuntime
-import com.aioweb.app.data.stremio.*
+import com.aioweb.app.data.stremio.InstalledStremioAddon
+import com.aioweb.app.data.stremio.StremioMetaPreview
+import com.aioweb.app.data.stremio.StremioRepository
 import com.lagradost.cloudstream3.SearchResponse
+
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -40,14 +42,14 @@ data class MoviesState(
     val installedPlugins: List<InstalledPlugin> = emptyList(),
     val installedStremioAddons: List<InstalledStremioAddon> = emptyList(),
 
-    val selectedSourceId: String = "builtin",
+    val selectedSourceId: String = "builtin"
 )
 
 class MoviesViewModel(
     private val sl: ServiceLocator,
     private val pluginRepo: PluginRepository,
     private val stremioRepo: StremioRepository,
-    private val context: Context,
+    private val context: Context
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MoviesState())
@@ -60,9 +62,6 @@ class MoviesViewModel(
         observeContinueWatching()
     }
 
-    // =========================
-    // TMDB
-    // =========================
     private fun loadTMDB() {
         viewModelScope.launch {
             val key = sl.tmdbApiKey
@@ -80,9 +79,6 @@ class MoviesViewModel(
         }
     }
 
-    // =========================
-    // PLUGINS
-    // =========================
     private fun observePlugins() {
         viewModelScope.launch {
             pluginRepo.installed.collect { plugins ->
@@ -116,9 +112,6 @@ class MoviesViewModel(
         }
     }
 
-    // =========================
-    // STREMIO
-    // =========================
     private fun observeStremio() {
         viewModelScope.launch {
             stremioRepo.addons.collect { addons ->
@@ -126,11 +119,11 @@ class MoviesViewModel(
                 val sections = mutableListOf<StremioSection>()
 
                 for (addon in addons) {
-                    val mf = runCatching {
+                    val manifest = runCatching {
                         stremioRepo.fetchManifest(addon.manifestUrl)
                     }.getOrNull() ?: continue
 
-                    for (cat in mf.catalogs) {
+                    for (cat in manifest.catalogs) {
                         val items = runCatching {
                             stremioRepo.fetchCatalog(addon, cat.type, cat.id)
                         }.getOrDefault(emptyList())
@@ -152,7 +145,7 @@ class MoviesViewModel(
         }
     }
 
-    // 🔥 THIS IS THE IMPORTANT PART (STREAM RESOLVER)
+    // 🔥 REQUIRED FOR CLICK TO WORK
     suspend fun getStremioStreams(
         addon: InstalledStremioAddon,
         item: StremioMetaPreview
@@ -162,7 +155,6 @@ class MoviesViewModel(
         id = item.id
     )
 
-    // =========================
     private fun observeContinueWatching() {
         viewModelScope.launch {
             LibraryDb.get(context).watchProgress().continueWatching().collect {
