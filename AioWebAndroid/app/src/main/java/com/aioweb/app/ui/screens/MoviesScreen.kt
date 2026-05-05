@@ -27,115 +27,172 @@ fun MoviesScreen(
     val state by vm.state.collectAsState()
     val scope = rememberCoroutineScope()
 
+    var search by remember { mutableStateOf("") }
+
     LaunchedEffect(Unit) {
         vm.loadDiscover()
     }
 
-    LazyColumn(Modifier.fillMaxSize()) {
+    Column {
 
-        // TMDB
-        if (!state.isPluginActive && !state.isStremioActive && !state.isNuvioActive) {
-            item { SectionTitle("Trending") }
+        // =========================
+        // 🔍 SEARCH BAR
+        // =========================
+        OutlinedTextField(
+            value = search,
+            onValueChange = {
+                search = it
+                vm.search(it)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            label = { Text("Search movies...") }
+        )
 
-            items(state.trending) { movie ->
-                MovieCard(
-                    title = movie.title ?: "Unknown",
-                    poster = movie.posterPath,
-                    onClick = { onMovieClick(movie.id) }
-                )
-            }
+        // =========================
+        // 🔁 SOURCE SWITCH
+        // =========================
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+
+            FilterChip(
+                selected = !state.isPluginActive && !state.isStremioActive && !state.isNuvioActive,
+                onClick = { vm.setSource("tmdb") },
+                label = { Text("TMDB") }
+            )
+
+            FilterChip(
+                selected = state.isPluginActive,
+                onClick = { vm.setSource("plugin") },
+                label = { Text("Plugins") }
+            )
+
+            FilterChip(
+                selected = state.isStremioActive,
+                onClick = { vm.setSource("stremio") },
+                label = { Text("Stremio") }
+            )
+
+            FilterChip(
+                selected = state.isNuvioActive,
+                onClick = { vm.setSource("nuvio") },
+                label = { Text("Nuvio") }
+            )
         }
 
-        // Plugins
-        if (state.isPluginActive) {
-            state.pluginSections.forEach { section ->
+        // =========================
+        // 🎬 CONTENT
+        // =========================
+        LazyColumn(
+            modifier = Modifier.fillMaxSize()
+        ) {
 
-                item { SectionTitle(section.title ?: "Plugins") }
+            // TMDB
+            if (!state.isPluginActive && !state.isStremioActive && !state.isNuvioActive) {
+                item { SectionTitle("Trending") }
 
-                items(section.items) { item ->
-
+                items(state.trending) { movie ->
                     MovieCard(
-                        title = item.name ?: "Unknown",
-                        poster = item.posterUrl,
-                        onClick = {
+                        title = movie.title ?: "Unknown",
+                        poster = movie.posterPath,
+                        onClick = { onMovieClick(movie.id) }
+                    )
+                }
+            }
 
-                            val plugin = state.installedPlugins
-                                .firstOrNull { it.internalName == state.selectedSourceId }
-                                ?: return@MovieCard
+            // Plugins
+            if (state.isPluginActive) {
+                state.pluginSections.forEach { section ->
 
-                            scope.launch {
+                    item { SectionTitle(section.title ?: "Plugins") }
 
-                                val sources = mutableListOf<PlayerSource>()
+                    items(section.items) { item ->
 
-                                PluginRuntime.loadLinks(
-                                    context = context,
-                                    filePath = plugin.filePath,
-                                    url = item.url
-                                ) { link ->
+                        MovieCard(
+                            title = item.name ?: "Unknown",
+                            poster = item.posterUrl,
+                            onClick = {
 
-                                    if (link.url.isNullOrEmpty()) return@loadLinks
+                                val plugin = state.installedPlugins
+                                    .firstOrNull { it.internalName == state.selectedSourceId }
+                                    ?: return@MovieCard
 
-                                    sources.add(
-                                        PlayerSource(
-                                            id = "${link.name}_${link.quality}",
-                                            url = link.url,
-                                            label = link.name ?: "Stream",
-                                            addonName = link.name ?: "Unknown",
-                                            qualityTag = link.quality?.toString() ?: "Auto",
-                                            isMagnet = link.url.startsWith("magnet")
+                                scope.launch {
+
+                                    val sources = mutableListOf<PlayerSource>()
+
+                                    PluginRuntime.loadLinks(
+                                        context = context,
+                                        filePath = plugin.filePath,
+                                        url = item.url
+                                    ) { link ->
+
+                                        if (link.url.isNullOrEmpty()) return@loadLinks
+
+                                        sources.add(
+                                            PlayerSource(
+                                                id = "${link.name}_${link.quality}",
+                                                url = link.url,
+                                                label = link.name ?: "Stream",
+                                                addonName = link.name ?: "Unknown",
+                                                qualityTag = link.quality?.toString() ?: "Auto",
+                                                isMagnet = link.url.startsWith("magnet")
+                                            )
                                         )
-                                    )
-                                }
+                                    }
 
-                                if (sources.isNotEmpty()) {
-
-                                    MoviePlayerSession.set(
-                                        newSources = sources,
-                                        progressKey = WatchProgressKey(
-                                            title = item.name ?: "plugin"
+                                    if (sources.isNotEmpty()) {
+                                        MoviePlayerSession.set(
+                                            newSources = sources,
+                                            progressKey = WatchProgressKey(
+                                                title = item.name ?: "plugin"
+                                            )
                                         )
-                                    )
 
-                                    val first = sources.first()
+                                        val first = sources.first()
 
-                                    onPlayStream(
-                                        first.url,
-                                        item.name ?: "Stream"
-                                    )
+                                        onPlayStream(
+                                            first.url,
+                                            item.name ?: "Stream"
+                                        )
+                                    }
                                 }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
-        }
 
-        // Stremio
-        if (state.isStremioActive) {
-            state.stremioSections.forEach { section ->
-                item { SectionTitle(section.title ?: "Stremio") }
+            // Stremio
+            if (state.isStremioActive) {
+                state.stremioSections.forEach { section ->
+                    item { SectionTitle(section.title ?: "Stremio") }
 
-                items(section.items) { item ->
-                    MovieCard(
-                        title = item.name ?: "Unknown",
-                        poster = item.poster,
-                        onClick = {}
-                    )
+                    items(section.items) { item ->
+                        MovieCard(
+                            title = item.name ?: "Unknown",
+                            poster = item.poster,
+                            onClick = {}
+                        )
+                    }
                 }
             }
-        }
 
-        // Nuvio
-        if (state.isNuvioActive) {
-            state.nuvioSections.forEach { section ->
-                item { SectionTitle(section.title ?: "Nuvio") }
+            // Nuvio
+            if (state.isNuvioActive) {
+                state.nuvioSections.forEach { section ->
+                    item { SectionTitle(section.title ?: "Nuvio") }
 
-                items(section.items) { item ->
-                    MovieCard(
-                        title = item.name ?: "Unknown",
-                        poster = item.poster,
-                        onClick = {}
-                    )
+                    items(section.items) { item ->
+                        MovieCard(
+                            title = item.name ?: "Unknown",
+                            poster = item.poster,
+                            onClick = {}
+                        )
+                    }
                 }
             }
         }
@@ -154,8 +211,9 @@ fun MovieCard(
             .clickable { onClick() }
             .padding(8.dp)
     ) {
+
         AsyncImage(
-            model = poster,
+            model = poster ?: "",
             contentDescription = null,
             modifier = Modifier
                 .width(100.dp)
@@ -164,8 +222,13 @@ fun MovieCard(
 
         Spacer(Modifier.width(8.dp))
 
-        Column {
-            Text(title)
+        Column(
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge
+            )
         }
     }
 }
