@@ -6,7 +6,6 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -15,7 +14,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import com.aioweb.app.data.plugins.PluginRuntime
 import com.aioweb.app.player.MoviePlayerSession
-import com.aioweb.app.player.MovieSource
+import com.aioweb.app.player.PlayerSource
 import com.aioweb.app.player.WatchProgressKey
 
 @Composable
@@ -26,24 +25,17 @@ fun MoviesScreen(
     val context = LocalContext.current
     val vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(context))
     val state by vm.state.collectAsState()
-
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         vm.loadDiscover()
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize()
-    ) {
+    LazyColumn(Modifier.fillMaxSize()) {
 
-        // =========================
-        // BUILTIN (TMDB)
-        // =========================
+        // TMDB
         if (!state.isPluginActive && !state.isStremioActive && !state.isNuvioActive) {
-            item {
-                SectionTitle("Trending")
-            }
+            item { SectionTitle("Trending") }
 
             items(state.trending) { movie ->
                 MovieCard(
@@ -54,11 +46,8 @@ fun MoviesScreen(
             }
         }
 
-        // =========================
-        // CLOUDSTREAM PLUGINS
-        // =========================
+        // Plugins
         if (state.isPluginActive) {
-
             state.pluginSections.forEach { section ->
 
                 item { SectionTitle(section.title ?: "Plugins") }
@@ -76,34 +65,34 @@ fun MoviesScreen(
 
                             scope.launch {
 
-                                val sources = mutableListOf<MovieSource>()
+                                val sources = mutableListOf<PlayerSource>()
 
-                                try {
-                                    PluginRuntime.loadLinks(
-                                        context = context,
-                                        filePath = plugin.filePath,
-                                        url = item.url
-                                    ) { link ->
+                                PluginRuntime.loadLinks(
+                                    context = context,
+                                    filePath = plugin.filePath,
+                                    url = item.url
+                                ) { link ->
 
-                                        if (link.url.isNullOrEmpty()) return@loadLinks
+                                    if (link.url.isNullOrEmpty()) return@loadLinks
 
-                                        sources.add(
-                                            MovieSource(
-                                                id = "${link.name}_${link.quality}",
-                                                url = link.url,
-                                                addonName = link.name ?: "Unknown",
-                                                qualityTag = link.quality?.toString() ?: "Auto"
-                                            )
+                                    sources.add(
+                                        PlayerSource(
+                                            id = "${link.name}_${link.quality}",
+                                            url = link.url,
+                                            label = link.name ?: "Stream",
+                                            addonName = link.name ?: "Unknown",
+                                            qualityTag = link.quality?.toString() ?: "Auto",
+                                            isMagnet = link.url.startsWith("magnet")
                                         )
-                                    }
-                                } catch (_: Exception) {}
+                                    )
+                                }
 
                                 if (sources.isNotEmpty()) {
 
                                     MoviePlayerSession.set(
                                         newSources = sources,
                                         progressKey = WatchProgressKey(
-                                            item.name ?: "plugin"
+                                            title = item.name ?: "plugin"
                                         )
                                     )
 
@@ -121,45 +110,31 @@ fun MoviesScreen(
             }
         }
 
-        // =========================
-        // STREMIO
-        // =========================
+        // Stremio
         if (state.isStremioActive) {
-
             state.stremioSections.forEach { section ->
-
                 item { SectionTitle(section.title ?: "Stremio") }
 
                 items(section.items) { item ->
-
                     MovieCard(
                         title = item.name ?: "Unknown",
                         poster = item.poster,
-                        onClick = {
-                            // handled elsewhere
-                        }
+                        onClick = {}
                     )
                 }
             }
         }
 
-        // =========================
-        // NUVIO
-        // =========================
+        // Nuvio
         if (state.isNuvioActive) {
-
             state.nuvioSections.forEach { section ->
-
                 item { SectionTitle(section.title ?: "Nuvio") }
 
                 items(section.items) { item ->
-
                     MovieCard(
                         title = item.name ?: "Unknown",
                         poster = item.poster,
-                        onClick = {
-                            // handled elsewhere
-                        }
+                        onClick = {}
                     )
                 }
             }
@@ -174,12 +149,11 @@ fun MovieCard(
     onClick: () -> Unit
 ) {
     Row(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
             .clickable { onClick() }
             .padding(8.dp)
     ) {
-
         AsyncImage(
             model = poster,
             contentDescription = null,
@@ -188,15 +162,10 @@ fun MovieCard(
                 .height(150.dp)
         )
 
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(Modifier.width(8.dp))
 
-        Column(
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge
-            )
+        Column {
+            Text(title)
         }
     }
 }
