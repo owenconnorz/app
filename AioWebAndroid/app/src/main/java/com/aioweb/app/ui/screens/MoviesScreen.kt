@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import com.aioweb.app.ui.viewmodel.MoviesViewModel
 
 @Composable
@@ -25,6 +26,7 @@ fun MoviesScreen(
 
     LazyColumn {
 
+        // SEARCH
         item {
             OutlinedTextField(
                 value = "",
@@ -34,7 +36,7 @@ fun MoviesScreen(
             )
         }
 
-        // CLOUDSTREAM SELECTOR
+        // PLUGINS SELECTOR
         item {
             LazyRow(
                 contentPadding = PaddingValues(8.dp),
@@ -43,26 +45,56 @@ fun MoviesScreen(
                 items(state.installedPlugins) { plugin ->
                     FilterChip(
                         selected = false,
-                        onClick = { vm.loadPluginHome(plugin.internalName) },
+                        onClick = {
+                            vm.setSource(plugin.internalName)
+                        },
                         label = { Text(plugin.name) }
                     )
                 }
             }
         }
 
-        // HERO
+        // HERO BANNER (AUTO SLIDE)
         item {
-            val movie = state.heroBanner.firstOrNull()
+            val movies = state.heroBanner
+            var index by remember { mutableStateOf(0) }
+
+            LaunchedEffect(movies) {
+                while (true) {
+                    delay(4000)
+                    if (movies.isNotEmpty()) {
+                        index = (index + 1) % movies.size
+                    }
+                }
+            }
+
+            val movie = movies.getOrNull(index)
+
             if (movie != null) {
-                AsyncImage(
-                    model = "https://image.tmdb.org/t/p/w780${movie.posterPath}",
-                    contentDescription = null,
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(240.dp)
-                        .clickable { onMovieClick(movie.id) },
-                    contentScale = ContentScale.Crop
-                )
+                        .clickable { onMovieClick(movie.id) }
+                ) {
+                    AsyncImage(
+                        model = "https://image.tmdb.org/t/p/w780${movie.backdropPath ?: movie.posterPath}",
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .padding(16.dp)
+                    ) {
+                        Text(movie.title ?: "")
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { onMovieClick(movie.id) }) {
+                            Text("View Details")
+                        }
+                    }
+                }
             }
         }
 
@@ -70,9 +102,15 @@ fun MoviesScreen(
         item { SectionTitle("Trending") }
 
         item {
-            HorizontalRow(state.trending.map {
-                PosterItem(it.title ?: "", "https://image.tmdb.org/t/p/w500${it.posterPath}")
-            })
+            HorizontalRow(
+                state.trending.map {
+                    PosterItem(
+                        it.title ?: "",
+                        "https://image.tmdb.org/t/p/w500${it.posterPath}",
+                        onClick = { onMovieClick(it.id) }
+                    )
+                }
+            )
         }
 
         // STREMIO
@@ -80,9 +118,11 @@ fun MoviesScreen(
             item { SectionTitle(section.title) }
 
             item {
-                HorizontalRow(section.items.map {
-                    PosterItem(it.name ?: "", it.poster)
-                })
+                HorizontalRow(
+                    section.items.map {
+                        PosterItem(it.name ?: "", it.poster)
+                    }
+                )
             }
         }
 
@@ -91,15 +131,21 @@ fun MoviesScreen(
             item { SectionTitle(section.title) }
 
             item {
-                HorizontalRow(section.items.map {
-                    PosterItem(it.name ?: "", it.posterUrl)
-                })
+                HorizontalRow(
+                    section.items.map {
+                        PosterItem(it.name ?: "", it.posterUrl)
+                    }
+                )
             }
         }
     }
 }
 
-data class PosterItem(val title: String, val poster: String?)
+data class PosterItem(
+    val title: String,
+    val poster: String?,
+    val onClick: (() -> Unit)? = null
+)
 
 @Composable
 fun HorizontalRow(items: List<PosterItem>) {
@@ -108,8 +154,11 @@ fun HorizontalRow(items: List<PosterItem>) {
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(items) { item ->
-            Column(modifier = Modifier.width(140.dp)) {
-
+            Column(
+                modifier = Modifier
+                    .width(140.dp)
+                    .clickable { item.onClick?.invoke() }
+            ) {
                 AsyncImage(
                     model = item.poster ?: "",
                     contentDescription = null,
