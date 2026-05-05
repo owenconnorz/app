@@ -9,13 +9,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,9 +28,14 @@ fun SourceSelectorPopup(
 
     Box(modifier = modifier) {
 
+        // =========================
+        // BUTTON
+        // =========================
         Card(
             shape = RoundedCornerShape(50),
-            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.6f)),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.Black.copy(alpha = 0.6f)
+            ),
             modifier = Modifier
                 .size(48.dp)
                 .clickable { expanded = true }
@@ -50,28 +49,42 @@ fun SourceSelectorPopup(
             }
         }
 
+        // =========================
+        // DROPDOWN
+        // =========================
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-            modifier = Modifier.background(Color.Black.copy(alpha = 0.85f))
+            modifier = Modifier.background(Color.Black.copy(alpha = 0.9f))
         ) {
-            sources.forEach { source ->
+
+            // ✅ FIX: explicit type avoids compiler crash
+            sources.forEach { source: PlayerSource ->
+
                 DropdownMenuItem(
                     text = {
+
                         Column {
+
                             Row(verticalAlignment = Alignment.CenterVertically) {
+
                                 if (source.id == selectedSourceId) {
                                     Icon(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = null,
-                                        tint = Color.Green
+                                        tint = Color.Green,
+                                        modifier = Modifier.size(16.dp)
                                     )
+
+                                    Spacer(Modifier.width(4.dp))
                                 }
+
                                 Text(
-                                    text = source.qualityTag ?: "Unknown",
+                                    text = source.qualityTag ?: "Auto",
                                     color = Color.White
                                 )
                             }
+
                             Text(
                                 text = source.addonName,
                                 color = Color.LightGray,
@@ -79,25 +92,37 @@ fun SourceSelectorPopup(
                             )
                         }
                     },
+
                     onClick = {
                         expanded = false
                         onSwitchSource(source)
                     },
+
                     leadingIcon = {
-                        if (source.isMagnet) {
-                            Icon(
-                                imageVector = Icons.Default.Link,
-                                contentDescription = "Magnet",
-                                tint = Color.Cyan
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Stream",
-                                tint = Color.White
-                            )
-                        }
+                        Icon(
+                            imageVector = if (source.isMagnet)
+                                Icons.Default.Link
+                            else
+                                Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = if (source.isMagnet) Color.Cyan else Color.White
+                        )
                     }
+                )
+            }
+
+            // =========================
+            // EMPTY STATE (prevents crash)
+            // =========================
+            if (sources.isEmpty()) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            "No sources",
+                            color = Color.Gray
+                        )
+                    },
+                    onClick = { expanded = false }
                 )
             }
         }
