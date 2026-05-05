@@ -21,9 +21,145 @@ import kotlinx.coroutines.flow.*
 
 data class PluginSection(
     val title: String,
-    val items: List<SearchResponse>,
+    val items: List<SearchResponse>
 )
 
 data class StremioSection(
     val title: String,
-    val items: List<St
+    val items: List<StremioMetaPreview>
+)
+
+data class MoviesState(
+    val trending: List<TmdbMovie> = emptyList(),
+    val popular: List<TmdbMovie> = emptyList(),
+    val heroBanner: List<TmdbMovie> = emptyList(),
+    val continueWatching: List<WatchProgressEntity> = emptyList(),
+
+    val pluginSections: List<PluginSection> = emptyList(),
+    val stremioSections: List<StremioSection> = emptyList(),
+
+    val installedPlugins: List<InstalledPlugin> = emptyList(),
+    val installedStremioAddons: List<InstalledStremioAddon> = emptyList()
+)
+
+class MoviesViewModel(
+    private val sl: ServiceLocator,
+    private val pluginRepo: PluginRepository,
+    private val stremioRepo: StremioRepository,
+    private val context: Context
+) : ViewModel() {
+
+    private val _state = MutableStateFlow(MoviesState())
+    val state: StateFlow<MoviesState> = _state
+
+    init {
+        loadTMDB()
+        observePlugins()
+        observeStremio()
+        observeContinueWatching()
+    }
+
+    private fun loadTMDB() {
+        viewModelScope.launch {
+            val key = sl.tmdbApiKey
+
+            val rows = HomeCollections.ALL.map { def ->
+                async {
+                    val items = runCatching { def.fetch(sl.tmdb, key) }
+                        .getOrDefault(emptyList())
+                    def.id to items
+                }
+            }.awaitAll().toMap()
+
+            _state.update {
+                it.copy(
+                    trending = rows["trending"] ?: emptyList(),
+                    popular = rows["popular"] ?: emptyList(),
+                    heroBanner = (rows["trending"] ?: emptyList()).take(5)
+                )
+            }
+        }
+    }
+
+    private fun observePlugins() {
+        viewModelScope.launch {
+            pluginRepo.installed.collect {
+                _state.update { s -> s.copy(installedPlugins = it) }
+            }
+        }
+    }
+
+    private fun observeStremio() {
+        viewModelScope.launch {
+            stremioRepo.addons.collect { addons ->
+
+                val sections = mutableListOf<StremioSection>()
+
+                for (addon in addons) {
+                    val mf = runCatching {
+                        stremioRepo.fetchManifest(addon.manifestUrl)
+                    }.getOrNull() ?: continue
+
+                    for (cat in mf.catalogs) {
+                        val items = runCatching {
+                            stremioRepo.fetchCatalog(addon, cat.type, cat.id)
+                        }.getOrDefault(emptyList())
+
+                        if (items.isNotEmpty()) {
+                            sections.add(
+                                StremioSection(
+                                    title = "${addon.name} • ${cat.name ?: cat.id}",
+                                    items = items
+                                )
+                            )
+                        }
+                    }
+                }
+
+                _state.update { it.copy(stremioSections = sections) }
+            }
+        }
+    }
+
+    private fun observeContinueWatching() {
+        viewModelScope.launch {
+            LibraryDb.get(context).watchProgress().continueWatching().collect {
+                _state.update { s -> s.copy(continueWatching = it) }
+            }
+        }
+    }
+
+    fun loadPluginHome(pluginId: String) {
+        val plugin = _state.value.installedPlugins
+            .firstOrNull { it.internalName == pluginId }
+            ?: return
+
+        viewModelScope.launch {
+            val sections = runCatching {
+                PluginRuntime.home(context, plugin.filePath)
+            }.getOrDefault(emptyList())
+
+            _state.update {
+                it.copy(
+                    pluginSections = sections.map { (name, items) ->
+                        PluginSection(name, items)
+                    }
+                )
+            }
+        }
+    }
+
+    companion object {
+        fun factory(context: Context) = object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                @Suppress("UNCHECKED_CAST")
+                return MoviesViewModel(
+                    ServiceLocator.get(context),
+                    PluginRepository(context),
+                    StremioRepository(context),
+                    context
+                ) as T
+            }
+        }
+    }
+}
