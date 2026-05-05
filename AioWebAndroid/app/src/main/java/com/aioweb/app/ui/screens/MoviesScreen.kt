@@ -20,187 +20,192 @@ import com.aioweb.app.player.WatchProgressKey
 
 @Composable
 fun MoviesScreen(
-onMovieClick: (Long) -> Unit,
-onPlayStream: (String, String) -> Unit = { _, _ -> }
+    onMovieClick: (Long) -> Unit,
+    onPlayStream: (String, String) -> Unit = { _, _ -> }
 ) {
-val context = LocalContext.current
-val vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(context))
-val state by vm.state.collectAsState()
+    val context = LocalContext.current
+    val vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(context))
+    val state by vm.state.collectAsState()
 
-val scope = rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
 
-LaunchedEffect(Unit) {
-    vm.loadDiscover()
-}
-
-LazyColumn(
-    modifier = Modifier.fillMaxSize()
-) {
-
-    // =========================
-    // BUILTIN (TMDB)
-    // =========================
-    if (!state.isPluginActive && !state.isStremioActive && !state.isNuvioActive) {
-        item {
-            SectionTitle("Trending")
-        }
-
-        items(state.trending) { movie ->
-            MovieCard(
-                title = movie.title,
-                poster = movie.posterPath,
-                onClick = { onMovieClick(movie.id) }
-            )
-        }
+    LaunchedEffect(Unit) {
+        vm.loadDiscover()
     }
 
-    // =========================
-    // CLOUDSTREAM PLUGINS
-    // =========================
-    if (state.isPluginActive) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize()
+    ) {
 
-        state.pluginSections.forEach { section ->
+        // =========================
+        // BUILTIN (TMDB)
+        // =========================
+        if (!state.isPluginActive && !state.isStremioActive && !state.isNuvioActive) {
+            item {
+                SectionTitle("Trending")
+            }
 
-            item { SectionTitle(section.title) }
-
-            items(section.items) { item ->
-
+            items(state.trending) { movie ->
                 MovieCard(
-                    title = item.name,
-                    poster = item.posterUrl,
-                    onClick = {
+                    title = movie.title ?: "Unknown",
+                    poster = movie.posterPath,
+                    onClick = { onMovieClick(movie.id) }
+                )
+            }
+        }
 
-                        val plugin = state.installedPlugins
-                            .firstOrNull { it.internalName == state.selectedSourceId }
-                            ?: return@MovieCard
+        // =========================
+        // CLOUDSTREAM PLUGINS
+        // =========================
+        if (state.isPluginActive) {
 
-                        scope.launch {
+            state.pluginSections.forEach { section ->
 
-                            val sources = mutableListOf<MovieSource>()
+                item { SectionTitle(section.title ?: "Plugins") }
 
-                            PluginRuntime.loadLinks(
-                                context = context,
-                                filePath = plugin.filePath,
-                                url = item.url
-                            ) { link ->
+                items(section.items) { item ->
 
-                                sources.add(
-                                    MovieSource(
-                                        id = "${link.name}_${link.quality}",
-                                        url = link.url,
-                                        addonName = link.name,
-                                        qualityTag = link.quality?.toString() ?: "Auto"
+                    MovieCard(
+                        title = item.name ?: "Unknown",
+                        poster = item.posterUrl,
+                        onClick = {
+
+                            val plugin = state.installedPlugins
+                                .firstOrNull { it.internalName == state.selectedSourceId }
+                                ?: return@MovieCard
+
+                            scope.launch {
+
+                                val sources = mutableListOf<MovieSource>()
+
+                                try {
+                                    PluginRuntime.loadLinks(
+                                        context = context,
+                                        filePath = plugin.filePath,
+                                        url = item.url
+                                    ) { link ->
+
+                                        if (link.url.isNullOrEmpty()) return@loadLinks
+
+                                        sources.add(
+                                            MovieSource(
+                                                id = "${link.name}_${link.quality}",
+                                                url = link.url,
+                                                addonName = link.name ?: "Unknown",
+                                                qualityTag = link.quality?.toString() ?: "Auto"
+                                            )
+                                        )
+                                    }
+                                } catch (_: Exception) {}
+
+                                if (sources.isNotEmpty()) {
+
+                                    MoviePlayerSession.set(
+                                        newSources = sources,
+                                        progressKey = WatchProgressKey(
+                                            item.name ?: "plugin"
+                                        )
                                     )
-                                )
-                            }
 
-                            if (sources.isNotEmpty()) {
+                                    val first = sources.first()
 
-                                MoviePlayerSession.set(
-                                    newSources = sources,
-                                    progressKey = WatchProgressKey(
-                                        item.name ?: "plugin"
+                                    onPlayStream(
+                                        first.url,
+                                        item.name ?: "Stream"
                                     )
-                                )
-
-                                val first = sources.first()
-
-                                onPlayStream(
-                                    first.url,
-                                    item.name ?: "Stream"
-                                )
+                                }
                             }
                         }
-                    }
-                )
+                    )
+                }
+            }
+        }
+
+        // =========================
+        // STREMIO
+        // =========================
+        if (state.isStremioActive) {
+
+            state.stremioSections.forEach { section ->
+
+                item { SectionTitle(section.title ?: "Stremio") }
+
+                items(section.items) { item ->
+
+                    MovieCard(
+                        title = item.name ?: "Unknown",
+                        poster = item.poster,
+                        onClick = {
+                            // handled elsewhere
+                        }
+                    )
+                }
+            }
+        }
+
+        // =========================
+        // NUVIO
+        // =========================
+        if (state.isNuvioActive) {
+
+            state.nuvioSections.forEach { section ->
+
+                item { SectionTitle(section.title ?: "Nuvio") }
+
+                items(section.items) { item ->
+
+                    MovieCard(
+                        title = item.name ?: "Unknown",
+                        poster = item.poster,
+                        onClick = {
+                            // handled elsewhere
+                        }
+                    )
+                }
             }
         }
     }
-
-    // =========================
-    // STREMIO
-    // =========================
-    if (state.isStremioActive) {
-
-        state.stremioSections.forEach { section ->
-
-            item { SectionTitle(section.title) }
-
-            items(section.items) { item ->
-
-                MovieCard(
-                    title = item.name,
-                    poster = item.poster,
-                    onClick = {
-                        // handled elsewhere
-                    }
-                )
-            }
-        }
-    }
-
-    // =========================
-    // NUVIO
-    // =========================
-    if (state.isNuvioActive) {
-
-        state.nuvioSections.forEach { section ->
-
-            item { SectionTitle(section.title) }
-
-            items(section.items) { item ->
-
-                MovieCard(
-                    title = item.name,
-                    poster = item.poster,
-                    onClick = {
-                        // handled elsewhere
-                    }
-                )
-            }
-        }
-    }
-}
-
 }
 
 @Composable
 fun MovieCard(
-title: String,
-poster: String?,
-onClick: () -> Unit
+    title: String,
+    poster: String?,
+    onClick: () -> Unit
 ) {
-Row(
-modifier = Modifier
-.fillMaxWidth()
-.clickable { onClick() }
-.padding(8.dp)
-) {
-
-    AsyncImage(
-        model = poster,
-        contentDescription = null,
+    Row(
         modifier = Modifier
-            .width(100.dp)
-            .height(150.dp)
-    )
-
-    Spacer(modifier = Modifier.width(8.dp))
-
-    Column(
-        verticalArrangement = Arrangement.Center
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(8.dp)
     ) {
-        Text(title)
-    }
-}
 
+        AsyncImage(
+            model = poster,
+            contentDescription = null,
+            modifier = Modifier
+                .width(100.dp)
+                .height(150.dp)
+        )
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Column(
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+    }
 }
 
 @Composable
 fun SectionTitle(text: String) {
-Text(
-text = text,
-style = MaterialTheme.typography.titleLarge,
-modifier = Modifier.padding(8.dp)
-)
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleLarge,
+        modifier = Modifier.padding(8.dp)
+    )
 }
