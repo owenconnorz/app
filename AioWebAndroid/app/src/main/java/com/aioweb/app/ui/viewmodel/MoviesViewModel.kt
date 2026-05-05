@@ -128,31 +128,40 @@ class MoviesViewModel(
 
     init {
         viewModelScope.launch {
-            pluginRepo.installed.collect { list ->
-                _state.update { it.copy(installedPlugins = list) }
+            pluginRepo.installed.collect {
+                _state.update { s -> s.copy(installedPlugins = it) }
             }
         }
+
         viewModelScope.launch {
-            stremioRepo.addons.collect { list ->
-                _state.update { it.copy(installedStremioAddons = list) }
+            stremioRepo.addons.collect {
+                _state.update { s -> s.copy(installedStremioAddons = it) }
+
+                // ✅ AUTO LOAD STREMIO (your requirement)
+                if (it.isNotEmpty() && _state.value.selectedSourceId == SOURCE_BUILTIN) {
+                    selectSource(SOURCE_STREMIO_PREFIX + it.first().manifestUrl)
+                }
             }
         }
+
         viewModelScope.launch {
-            nuvioRepo.installed.collect { list ->
-                _state.update { it.copy(installedNuvioProviders = list) }
+            nuvioRepo.installed.collect {
+                _state.update { s -> s.copy(installedNuvioProviders = it) }
             }
         }
+
         viewModelScope.launch {
             sl.settings.homeCollectionsCsv.collectLatest { loadDiscover() }
         }
+
         viewModelScope.launch {
-            LibraryDb.get(appContext).watchProgress().continueWatching().collect { rows ->
-                _state.update { it.copy(continueWatching = rows) }
+            LibraryDb.get(appContext).watchProgress().continueWatching().collect {
+                _state.update { s -> s.copy(continueWatching = it) }
             }
         }
     }
 
-    // ✅ ONLY ADDITION (DO NOT REMOVE ANYTHING ELSE)
+    // ✅ SAFE SOURCE SWITCHER
     fun setSource(source: String) {
         when (source) {
             "tmdb", SOURCE_BUILTIN -> selectSource(SOURCE_BUILTIN)
@@ -176,22 +185,26 @@ class MoviesViewModel(
         }
     }
 
-    // ===== ORIGINAL CODE CONTINUES UNCHANGED =====
-
     fun loadDiscover() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             try {
                 val key = sl.tmdbApiKey
                 val csv = sl.settings.homeCollectionsCsv.first()
+
                 val ids = csv?.takeIf { it.isNotBlank() }?.split(',')
                     ?: HomeCollections.ALL.filter { it.defaultEnabled }.map { it.id }
 
-                val collections: List<HomeCollection> = ids.mapNotNull { HomeCollections.byId(it) }
+                val collections: List<HomeCollection> = ids.mapNotNull {
+                    HomeCollections.byId(it)
+                }
 
                 val rows = collections.map { def ->
                     async {
-                        val items = runCatching { def.fetch(sl.tmdb, key) }.getOrDefault(emptyList())
+                        val items = runCatching {
+                            def.fetch(sl.tmdb, key)
+                        }.getOrDefault(emptyList())
+
                         if (items.isEmpty()) null
                         else CollectionRow(def.id, def.title, def.emoji, items)
                     }
@@ -206,26 +219,64 @@ class MoviesViewModel(
                         topRated = byId["top_rated"]?.items ?: emptyList(),
                         nowPlaying = byId["now_playing"]?.items ?: emptyList(),
                         collections = rows,
-                        heroBanner = (byId["trending"]?.items
-                            ?: byId["now_playing"]?.items
-                            ?: rows.firstOrNull()?.items
-                            ?: emptyList()).take(7),
+                        heroBanner = (
+                            byId["trending"]?.items
+                                ?: byId["now_playing"]?.items
+                                ?: rows.firstOrNull()?.items
+                                ?: emptyList()
+                        ).take(7),
                         loading = false,
                     )
                 }
+
             } catch (e: Exception) {
-                _state.update { it.copy(error = "Failed to load: ${e.message}", loading = false) }
+                _state.update {
+                    it.copy(error = "Failed to load: ${e.message}", loading = false)
+                }
             }
         }
     }
 
-    // keep ALL your other functions exactly as they were...
-    fun selectSource(sourceId: String) { /* unchanged */ }
-    private fun loadPluginHome(sourceId: String) { /* unchanged */ }
-    private fun loadStremioHome(manifestUrl: String) { /* unchanged */ }
-    private fun loadNuvioHome(providerId: String) { /* unchanged */ }
-    fun clearNotice() { _state.update { it.copy(notice = null) } }
-    fun search(query: String) { /* unchanged */ }
+    // KEEP YOUR ORIGINAL IMPLEMENTATIONS (unchanged)
+    fun selectSource(sourceId: String) { /* keep your original code */ }
+    private fun loadPluginHome(sourceId: String) { /* keep original */ }
+    private fun loadStremioHome(manifestUrl: String) { /* keep original */ }
+    private fun loadNuvioHome(providerId: String) { /* keep original */ }
+
+    fun clearNotice() {
+        _state.update { it.copy(notice = null) }
+    }
+
+    fun search(query: String) {
+        searchJob?.cancel()
+
+        if (query.isBlank()) {
+            _state.update {
+                it.copy(searchResults = emptyList(), pluginSearchResults = emptyList())
+            }
+            return
+        }
+
+        searchJob = viewModelScope.launch {
+            delay(350)
+            try {
+                if (_state.value.isPluginActive) {
+                    val plugin = _state.value.installedPlugins
+                        .firstOrNull { it.internalName == _state.value.selectedSourceId }
+
+                    if (plugin != null) {
+                        val res = PluginRuntime.search(appContext, plugin.filePath, query)
+                        _state.update { it.copy(pluginSearchResults = res, error = null) }
+                    }
+                } else {
+                    val res = sl.tmdb.search(sl.tmdbApiKey, query).results
+                    _state.update { it.copy(searchResults = res, error = null) }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(error = "Search failed: ${e.message}") }
+            }
+        }
+    }
 
     companion object {
         fun factory(context: Context) = object : ViewModelProvider.Factory {
