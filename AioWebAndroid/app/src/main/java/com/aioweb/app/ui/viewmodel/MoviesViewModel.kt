@@ -13,9 +13,7 @@ import com.aioweb.app.data.library.WatchProgressEntity
 import com.aioweb.app.data.plugins.InstalledPlugin
 import com.aioweb.app.data.plugins.PluginRepository
 import com.aioweb.app.data.plugins.PluginRuntime
-import com.aioweb.app.data.stremio.InstalledStremioAddon
-import com.aioweb.app.data.stremio.StremioMetaPreview
-import com.aioweb.app.data.stremio.StremioRepository
+import com.aioweb.app.data.stremio.*
 import com.lagradost.cloudstream3.SearchResponse
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -27,19 +25,12 @@ data class PluginSection(
 
 data class StremioSection(
     val title: String,
+    val addonName: String,
     val items: List<StremioMetaPreview>,
-)
-
-data class CollectionRow(
-    val id: String,
-    val title: String,
-    val emoji: String,
-    val items: List<TmdbMovie>,
 )
 
 data class MoviesState(
     val trending: List<TmdbMovie> = emptyList(),
-    val popular: List<TmdbMovie> = emptyList(),
     val heroBanner: List<TmdbMovie> = emptyList(),
     val continueWatching: List<WatchProgressEntity> = emptyList(),
 
@@ -49,7 +40,7 @@ data class MoviesState(
     val installedPlugins: List<InstalledPlugin> = emptyList(),
     val installedStremioAddons: List<InstalledStremioAddon> = emptyList(),
 
-    val loading: Boolean = false,
+    val selectedSourceId: String = "builtin",
 )
 
 class MoviesViewModel(
@@ -69,35 +60,34 @@ class MoviesViewModel(
         observeContinueWatching()
     }
 
+    // =========================
+    // TMDB
+    // =========================
     private fun loadTMDB() {
         viewModelScope.launch {
             val key = sl.tmdbApiKey
 
-            val rows = HomeCollections.ALL.map { def ->
-                async {
-                    val items = runCatching { def.fetch(sl.tmdb, key) }
-                        .getOrDefault(emptyList())
-                    def.id to items
-                }
-            }.awaitAll().toMap()
+            val trending = runCatching {
+                sl.tmdb.trending(key).results
+            }.getOrDefault(emptyList())
 
             _state.update {
                 it.copy(
-                    trending = rows["trending"] ?: emptyList(),
-                    popular = rows["popular"] ?: emptyList(),
-                    heroBanner = (rows["trending"] ?: emptyList()).take(5),
-                    loading = false
+                    trending = trending,
+                    heroBanner = trending.take(5)
                 )
             }
         }
     }
 
+    // =========================
+    // PLUGINS
+    // =========================
     private fun observePlugins() {
         viewModelScope.launch {
             pluginRepo.installed.collect { plugins ->
                 _state.update { it.copy(installedPlugins = plugins) }
 
-                // auto load first plugin
                 if (plugins.isNotEmpty()) {
                     loadPluginHome(plugins.first().internalName)
                 }
@@ -105,6 +95,30 @@ class MoviesViewModel(
         }
     }
 
+    fun loadPluginHome(pluginId: String) {
+        val plugin = _state.value.installedPlugins
+            .firstOrNull { it.internalName == pluginId }
+            ?: return
+
+        viewModelScope.launch {
+            val sections = runCatching {
+                PluginRuntime.home(context, plugin.filePath)
+            }.getOrDefault(emptyList())
+
+            _state.update {
+                it.copy(
+                    pluginSections = sections.map { (name, items) ->
+                        PluginSection(name, items)
+                    },
+                    selectedSourceId = pluginId
+                )
+            }
+        }
+    }
+
+    // =========================
+    // STREMIO
+    // =========================
     private fun observeStremio() {
         viewModelScope.launch {
             stremioRepo.addons.collect { addons ->
@@ -124,7 +138,8 @@ class MoviesViewModel(
                         if (items.isNotEmpty()) {
                             sections.add(
                                 StremioSection(
-                                    title = "${addon.name} • ${cat.name ?: cat.id}",
+                                    title = cat.name ?: cat.id,
+                                    addonName = addon.name,
                                     items = items
                                 )
                             )
@@ -137,6 +152,17 @@ class MoviesViewModel(
         }
     }
 
+    // 🔥 THIS IS THE IMPORTANT PART (STREAM RESOLVER)
+    suspend fun getStremioStreams(
+        addon: InstalledStremioAddon,
+        item: StremioMetaPreview
+    ) = stremioRepo.fetchStreams(
+        addon = addon,
+        type = item.type,
+        id = item.id
+    )
+
+    // =========================
     private fun observeContinueWatching() {
         viewModelScope.launch {
             LibraryDb.get(context).watchProgress().continueWatching().collect {
@@ -145,28 +171,8 @@ class MoviesViewModel(
         }
     }
 
-    fun loadPluginHome(pluginId: String) {
-        val plugin = _state.value.installedPlugins
-            .firstOrNull { it.internalName == pluginId }
-            ?: return
-
-        viewModelScope.launch {
-            val sections = runCatching {
-                PluginRuntime.home(context, plugin.filePath)
-            }.getOrDefault(emptyList())
-
-            _state.update {
-                it.copy(
-                    pluginSections = sections.map { (name, items) ->
-                        PluginSection(name, items)
-                    }
-                )
-            }
-        }
-    }
-
     fun setSource(source: String) {
-        if (source == "tmdb") {
+        if (source == "builtin") {
             loadTMDB()
         } else {
             loadPluginHome(source)
