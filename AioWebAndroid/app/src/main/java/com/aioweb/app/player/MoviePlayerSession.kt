@@ -3,31 +3,38 @@ package com.aioweb.app.player
 /**
  * Hand-off between MovieDetailScreen and the player route.
  *
- * Stremio resolves a list of streams. We pick the best as the initial
- * playback URL, but the player needs the *full* sorted list for the
- * "Sources" picker. Encoding a 30+ item list through nav-route arguments
- * is ugly, so we just stash it in a singleton until the player consumes it.
+ * Holds:
+ * - Full list of PlayerSource (for source picker)
+ * - Optional WatchProgressKey (for resume system)
  *
- * Also stashes the TMDB metadata (id, poster, media type) so the player
- * can save resume-position to the "Continue Watching" row without bloating
- * the navigation deeplink.
- *
- * Lives only for the lifetime of the process — fine, because the user
- * always re-enters the player by tapping "Play Movie" again on detail.
+ * Supports BOTH:
+ * - Full metadata (TMDB / Stremio)
+ * - Lightweight plugin playback
  */
 object MoviePlayerSession {
+
+    /** All playable sources (HLS, MP4, magnet, etc.) */
     var sources: List<PlayerSource> = emptyList()
         private set
 
-    /** Watch-progress descriptor for the currently-launched movie. */
+    /** Optional resume/playback metadata */
     var progressKey: WatchProgressKey? = null
         private set
 
-    fun set(newSources: List<PlayerSource>, progressKey: WatchProgressKey? = null) {
+    /**
+     * Set active playback session
+     */
+    fun set(
+        newSources: List<PlayerSource>,
+        progressKey: WatchProgressKey? = null
+    ) {
         sources = newSources
         this.progressKey = progressKey
     }
 
+    /**
+     * Clear session (called when player closes)
+     */
     fun clear() {
         sources = emptyList()
         progressKey = null
@@ -35,12 +42,23 @@ object MoviePlayerSession {
 }
 
 /**
- * Identifies a movie/episode for the resume-playback row. Carried alongside
- * the [PlayerSource] list when launching the player.
+ * Flexible progress key:
+ *
+ * Used for:
+ * - TMDB resume tracking (full fields)
+ * - Plugin playback (title only)
  */
 data class WatchProgressKey(
-    val tmdbId: Long,
+
+    /** TMDB ID (nullable for plugins) */
+    val tmdbId: Long? = null,
+
+    /** Title is ALWAYS required */
     val title: String,
-    val posterUrl: String?,
-    val mediaType: String, // "movie" or "tv"
+
+    /** Poster (optional) */
+    val posterUrl: String? = null,
+
+    /** "movie" or "tv" (optional for plugins) */
+    val mediaType: String? = null
 )
