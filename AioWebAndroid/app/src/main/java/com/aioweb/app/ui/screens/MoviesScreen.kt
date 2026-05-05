@@ -25,19 +25,16 @@ fun MoviesScreen(
 
     LazyColumn {
 
-        // 🔍 SEARCH
         item {
             OutlinedTextField(
                 value = "",
                 onValueChange = {},
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
                 label = { Text("Search...") }
             )
         }
 
-        // 🎛 CLOUDSTREAM SELECTOR
+        // CLOUDSTREAM SELECTOR
         item {
             LazyRow(
                 contentPadding = PaddingValues(8.dp),
@@ -53,9 +50,10 @@ fun MoviesScreen(
             }
         }
 
-        // 🎬 HERO
+        // HERO
         item {
-            state.heroBanner.firstOrNull()?.let { movie ->
+            val movie = state.heroBanner.firstOrNull()
+            if (movie != null) {
                 AsyncImage(
                     model = "https://image.tmdb.org/t/p/w780${movie.posterPath}",
                     contentDescription = null,
@@ -68,54 +66,32 @@ fun MoviesScreen(
             }
         }
 
-        // ▶ CONTINUE WATCHING
-        if (state.continueWatching.isNotEmpty()) {
-            item { SectionTitle("Continue Watching") }
-
-            item {
-                HorizontalRow(state.continueWatching.map {
-                    PosterItem(it.title, it.posterUrl)
-                })
-            }
-        }
-
-        // 🔥 TRENDING
+        // TRENDING
         item { SectionTitle("Trending") }
+
         item {
             HorizontalRow(state.trending.map {
-                PosterItem(
-                    it.title ?: "",
-                    "https://image.tmdb.org/t/p/w500${it.posterPath}"
-                )
+                PosterItem(it.title ?: "", "https://image.tmdb.org/t/p/w500${it.posterPath}")
             })
         }
 
-        // ⭐ POPULAR
-        item { SectionTitle("Popular") }
-        item {
-            HorizontalRow(state.popular.map {
-                PosterItem(
-                    it.title ?: "",
-                    "https://image.tmdb.org/t/p/w500${it.posterPath}"
-                )
-            })
-        }
+        // STREMIO
+        state.stremioSections.forEach { section ->
+            item { SectionTitle(section.title) }
 
-        // 📺 STREMIO
-        state.stremioSections.forEach {
-            item { SectionTitle(it.title) }
             item {
-                HorizontalRow(it.items.map {
+                HorizontalRow(section.items.map {
                     PosterItem(it.name ?: "", it.poster)
                 })
             }
         }
 
-        // 🔌 PLUGINS
-        state.pluginSections.forEach {
-            item { SectionTitle(it.title) }
+        // PLUGINS
+        state.pluginSections.forEach { section ->
+            item { SectionTitle(section.title) }
+
             item {
-                HorizontalRow(it.items.map {
+                HorizontalRow(section.items.map {
                     PosterItem(it.name ?: "", it.posterUrl)
                 })
             }
@@ -131,12 +107,32 @@ fun HorizontalRow(items: List<PosterItem>) {
         contentPadding = PaddingValues(8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(items) {
+        items(items) { item ->
             Column(modifier = Modifier.width(140.dp)) {
 
                 AsyncImage(
-                    model = it.poster ?: "",
+                    model = item.poster ?: "",
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .
+                        .height(200.dp)
+                        .clip(RoundedCornerShape(16.dp)),
+                    contentScale = ContentScale.Crop
+                )
+
+                Spacer(Modifier.height(6.dp))
+
+                Text(item.title, maxLines = 2)
+            }
+        }
+    }
+}
+
+@Composable
+fun SectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleLarge,
+        modifier = Modifier.padding(8.dp)
+    )
+}
