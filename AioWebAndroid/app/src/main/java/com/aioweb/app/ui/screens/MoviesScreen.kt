@@ -6,53 +6,54 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aioweb.app.ui.viewmodel.MoviesViewModel
-import com.aioweb.app.ui.viewmodel.MoviesState
 import com.lagradost.cloudstream3.SearchResponse
 
 @Composable
 fun MoviesScreen(
     onMovieClick: (Long) -> Unit,
-    onPlayStream: (String, String) -> Unit,
-    vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(LocalContext.current))
+    onPlayStream: (String, String) -> Unit
 ) {
+    val context = LocalContext.current
+    val vm: MoviesViewModel = viewModel(factory = MoviesViewModel.factory(context))
     val state by vm.state.collectAsState()
 
     LaunchedEffect(Unit) {
         vm.loadDiscover()
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize()
-    ) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
 
-        // HERO BANNER
+        // HERO
         item {
             HeroBanner(state.heroBanner, onMovieClick)
         }
 
         // TRENDING
+        item { SectionTitle("Trending") }
         item {
-            SectionTitle("Trending")
-        }
-
-        item {
-            HorizontalMovieRow(state.trending, onMovieClick)
+            LazyRow {
+                items(state.trending) { movie ->
+                    MovieCard(
+                        title = movie.title ?: "Unknown",
+                        onClick = { onMovieClick(movie.id) }
+                    )
+                }
+            }
         }
 
         // STREMIO
         state.stremioSections.forEach { section ->
             item { SectionTitle(section.title) }
-
             item {
                 LazyRow {
                     items(section.items) { item ->
                         MovieCard(
                             title = item.name ?: "Unknown",
                             onClick = {
-                                // fallback → just open details
                                 item.id?.toLongOrNull()?.let(onMovieClick)
                             }
                         )
@@ -64,7 +65,6 @@ fun MoviesScreen(
         // PLUGINS
         state.pluginSections.forEach { section ->
             item { SectionTitle(section.title) }
-
             item {
                 LazyRow {
                     items(section.items) { item: SearchResponse ->
@@ -72,8 +72,7 @@ fun MoviesScreen(
                             title = item.name ?: "Unknown",
                             onClick = {
                                 val url = item.url ?: return@MovieCard
-                                val title = item.name ?: "Stream"
-                                onPlayStream(url, title)
+                                onPlayStream(url, item.name ?: "Stream")
                             }
                         )
                     }
@@ -84,24 +83,18 @@ fun MoviesScreen(
 }
 
 @Composable
-private fun HeroBanner(
+fun HeroBanner(
     items: List<com.aioweb.app.data.api.TmdbMovie>,
     onClick: (Long) -> Unit
 ) {
     if (items.isEmpty()) return
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-    ) {
+    Column(Modifier.padding(16.dp)) {
         Text("Featured", style = MaterialTheme.typography.titleLarge)
-
-        Spacer(Modifier.height(8.dp))
 
         items.take(5).forEach {
             Text(
-                text = it.title,
+                text = it.title ?: "",
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onClick(it.id) }
@@ -112,22 +105,7 @@ private fun HeroBanner(
 }
 
 @Composable
-private fun HorizontalMovieRow(
-    movies: List<com.aioweb.app.data.api.TmdbMovie>,
-    onClick: (Long) -> Unit
-) {
-    LazyRow {
-        items(movies) {
-            MovieCard(
-                title = it.title,
-                onClick = { onClick(it.id) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun MovieCard(
+fun MovieCard(
     title: String,
     onClick: () -> Unit
 ) {
@@ -137,16 +115,16 @@ private fun MovieCard(
             .width(140.dp)
             .clickable { onClick() }
     ) {
-        Box(modifier = Modifier.padding(16.dp)) {
+        Box(Modifier.padding(16.dp)) {
             Text(title)
         }
     }
 }
 
 @Composable
-private fun SectionTitle(text: String) {
+fun SectionTitle(text: String) {
     Text(
-        text,
+        text = text,
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(16.dp)
     )
