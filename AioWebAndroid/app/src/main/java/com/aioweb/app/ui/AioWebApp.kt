@@ -6,12 +6,25 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Theaters
+import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector // ✅ FIXED IMPORT
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
@@ -20,7 +33,6 @@ import com.aioweb.app.data.ServiceLocator
 import com.aioweb.app.player.NativePlayerScreen
 import com.aioweb.app.ui.screens.*
 import com.aioweb.app.ui.viewmodel.AdultViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -35,12 +47,14 @@ private sealed class Tab(val route: String, val label: String, val icon: ImageVe
 
 @Composable
 fun AioWebApp() {
+
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
 
     val context = LocalContext.current
     val sl = remember { ServiceLocator.get(context) }
+
     val nsfwEnabled by sl.settings.nsfwEnabled.collectAsState(initial = false)
     val navOrderCsv by sl.settings.navTabOrderCsv.collectAsState(initial = null)
 
@@ -50,7 +64,8 @@ fun AioWebApp() {
     }
 
     val tabs = remember(nsfwEnabled, navOrderCsv) {
-        val pool: Map<String, Tab> = buildMap {
+
+        val pool = buildMap<String, Tab> {
             put(Tab.Movies.route, Tab.Movies)
             put(Tab.Music.route, Tab.Music)
             put(Tab.Ai.route, Tab.Ai)
@@ -58,15 +73,15 @@ fun AioWebApp() {
             else put(Tab.Library.route, Tab.Library)
         }
 
-        val requestedOrder = navOrderCsv
+        val requested = navOrderCsv
             ?.takeIf { it.isNotBlank() }
             ?.split(",")
             ?.mapNotNull { pool[it.trim()] }
             ?.distinct()
             .orEmpty()
 
-        val seen = requestedOrder.map { it.route }.toSet()
-        val middle = requestedOrder + pool.values.filter { it.route !in seen }
+        val seen = requested.map { it.route }.toSet()
+        val middle = requested + pool.values.filter { it.route !in seen }
 
         middle + Tab.Settings
     }
@@ -77,6 +92,7 @@ fun AioWebApp() {
             .background(MaterialTheme.colorScheme.background),
 
         bottomBar = {
+
             val showBar = currentRoute == null || tabs.any { it.route == currentRoute }
 
             if (showBar) {
@@ -90,8 +106,13 @@ fun AioWebApp() {
                         )
                     }
 
-                    NavigationBar {
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 0.dp
+                    ) {
+
                         tabs.forEach { tab ->
+
                             val selected = currentRoute == tab.route
 
                             NavigationBarItem(
@@ -104,13 +125,15 @@ fun AioWebApp() {
                                     }
                                 },
                                 icon = { Icon(tab.icon, contentDescription = tab.label) },
-                                label = { Text(tab.label) }
+                                label = { Text(tab.label) },
+                                colors = NavigationBarItemDefaults.colors()
                             )
                         }
                     }
                 }
             }
         }
+
     ) { padding ->
 
         Box(Modifier.fillMaxSize().padding(padding)) {
@@ -120,17 +143,14 @@ fun AioWebApp() {
                 startDestination = Tab.Movies.route
             ) {
 
-                // =========================
-                // 🎬 MOVIES (FIXED)
-                // =========================
+                // ================= MOVIES =================
                 composable(Tab.Movies.route) {
+
                     MoviesScreen(
                         onMovieClick = { id ->
                             nav.navigate("movie/$id")
                         },
-
-                        // ✅ FIX ADDED HERE
-                        onPlayStream = { url, title ->
+                        onPlayStream = { url, title ->   // ✅ FIXED (THIS WAS MISSING)
                             val u = URLEncoder.encode(url, "UTF-8")
                             val t = URLEncoder.encode(title, "UTF-8")
                             nav.navigate("player/url/$u/$t")
@@ -138,19 +158,16 @@ fun AioWebApp() {
                     )
                 }
 
-                // =========================
-                // 🎬 PLAYER
-                // =========================
+                // ================= PLAYER =================
                 composable(
                     "player/url/{url}/{title}",
                     arguments = listOf(
                         navArgument("url") { type = NavType.StringType },
                         navArgument("title") { type = NavType.StringType }
                     )
-                ) { entry ->
-
-                    val url = URLDecoder.decode(entry.arguments!!.getString("url")!!, "UTF-8")
-                    val title = URLDecoder.decode(entry.arguments!!.getString("title")!!, "UTF-8")
+                ) {
+                    val url = URLDecoder.decode(it.arguments!!.getString("url")!!, "UTF-8")
+                    val title = URLDecoder.decode(it.arguments!!.getString("title")!!, "UTF-8")
 
                     NativePlayerScreen(
                         streamUrl = url,
@@ -159,7 +176,7 @@ fun AioWebApp() {
                     )
                 }
 
-                // KEEP EVERYTHING ELSE UNCHANGED
+                // ================= SETTINGS =================
                 composable(Tab.Settings.route) {
                     SettingsHubScreen(onOpenPlugins = { nav.navigate("plugins") })
                 }
