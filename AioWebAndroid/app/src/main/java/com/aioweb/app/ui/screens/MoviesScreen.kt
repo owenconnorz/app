@@ -7,13 +7,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
+
+import coil.compose.AsyncImage
+
 import androidx.lifecycle.viewmodel.compose.viewModel
+
 import kotlinx.coroutines.launch
 
 import com.aioweb.app.ui.viewmodel.MoviesViewModel
-import com.aioweb.app.player.*
+import com.aioweb.app.player.PlayerSource
+import com.aioweb.app.player.MoviePlayerSession
+import com.aioweb.app.player.WatchProgressKey
 
 @Composable
 fun MoviesScreen(
@@ -28,13 +33,13 @@ fun MoviesScreen(
     LazyColumn {
 
         // =========================
-        // STREMIO SECTION (FIXED)
+        // STREMIO CONTENT (FIXED)
         // =========================
         state.stremioSections.forEach { section ->
 
             item {
                 Text(
-                    section.title,
+                    text = section.title,
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(8.dp)
                 )
@@ -43,7 +48,7 @@ fun MoviesScreen(
             items(section.items) { item ->
 
                 Row(
-                    Modifier
+                    modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
 
@@ -73,6 +78,7 @@ fun MoviesScreen(
                                 }
 
                                 if (sources.isNotEmpty()) {
+
                                     MoviePlayerSession.set(
                                         newSources = sources,
                                         progressKey = WatchProgressKey(
@@ -83,7 +89,10 @@ fun MoviesScreen(
 
                                     val first = sources.first()
 
-                                    onPlayStream(first.url, item.name ?: "Stream")
+                                    onPlayStream(
+                                        first.url,
+                                        item.name ?: "Stream"
+                                    )
                                 }
                             }
                         }
@@ -98,7 +107,7 @@ fun MoviesScreen(
                             .height(150.dp)
                     )
 
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Text(item.name ?: "Unknown")
                 }
